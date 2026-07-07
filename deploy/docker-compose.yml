@@ -1,6 +1,12 @@
+# Deploys straight from a git checkout: run from the repo root as
+#   docker compose -f deploy/docker-compose.yml up -d --build
+# (or just run deploy/update.sh, which the daily cron calls).
+# The tunnel token lives in deploy/.env (gitignored):  TUNNEL_TOKEN=...
 services:
   website:
-    build: .
+    build:
+      context: ..                 # repo root, so the Dockerfile sees css/ js/ index.html
+      dockerfile: deploy/Dockerfile
     container_name: WebSWR
     read_only: true
     restart: unless-stopped
@@ -38,7 +44,9 @@ services:
     restart: unless-stopped
     command: tunnel run
     environment:
-      - TUNNEL_TOKEN=
+      # Read from deploy/.env (compose auto-loads .env beside this file) so a
+      # `git pull` / `git reset --hard` can never wipe the real token.
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
     networks:
       web:
 networks:
