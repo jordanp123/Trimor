@@ -10,5 +10,8 @@ tools/.cache/
 # Server-local secrets (tunnel token) -- never committed
 deploy/.env
 
+# Cron lock file created by deploy/update.sh's flock on the server
+.deploy.lock
+
 # Scratch
 *.tmp
