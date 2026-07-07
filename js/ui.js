@@ -53,8 +53,43 @@
     if (kids) for (const c of kids) n.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
     return n;
   }
-  const num = (id, d) => { const v = parseFloat($(id).value); return isFinite(v) ? v : d; };
+  // Money inputs display thousands separators, so every numeric read strips
+  // commas first. (They're type="text": a type="number" field can't show them.)
+  const stripNum = (s) => String(s == null ? "" : s).replace(/,/g, "");
+  const num = (id, d) => { const v = parseFloat(stripNum($(id).value)); return isFinite(v) ? v : d; };
   const clampNum = (id, d, lo, hi) => { let v = num(id, d); if (!isFinite(v)) v = d; return Math.min(hi, Math.max(lo, v)); };
+
+  // ---------- live thousands separators for the $ inputs ----------
+  const MONEY_IDS = ["initialValue", "initialSpend", "spendFloor", "spendCeiling",
+                     "loanAmount", "loanExtra", "compPrincipal", "compAddition"];
+  function formatMoneyValue(s) {
+    s = String(s == null ? "" : s);
+    if (/[eE]/.test(s)) return s; // scientific notation: leave as typed (parseFloat handles it)
+    s = stripNum(s).replace(/[^0-9.]/g, "");
+    if (!s) return "";
+    const dot = s.indexOf(".");
+    const frac = dot >= 0 ? "." + s.slice(dot + 1).replace(/\./g, "") : "";
+    let int = (dot >= 0 ? s.slice(0, dot) : s).replace(/^0+(?=\d)/, "");
+    int = int.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return int + frac;
+  }
+  function formatMoneyInput(eln) {
+    const before = eln.value;
+    const after = formatMoneyValue(before);
+    if (after === before) return;
+    // While the user is typing, keep the caret anchored to the same DIGIT as
+    // commas shuffle around it (count digits left of the caret, re-seek them).
+    if (typeof eln.selectionStart === "number" && document.activeElement === eln) {
+      const digitsLeft = stripNum(before.slice(0, eln.selectionStart)).replace(/[^0-9.]/g, "").length;
+      eln.value = after;
+      let pos = 0, seen = 0;
+      while (pos < after.length && seen < digitsLeft) { if (after[pos] !== ",") seen++; pos++; }
+      eln.setSelectionRange(pos, pos);
+    } else {
+      eln.value = after;
+    }
+  }
+  const attachMoney = (eln) => eln.addEventListener("input", () => formatMoneyInput(eln));
   // Current CAPE the forward/Monte-Carlo path starts from: the shipped ERN "better
   // CAPE", refreshed daily by the server-side pipeline (no user input). Bounded.
   function currentCape() {
@@ -72,7 +107,7 @@
   function readFlows(containerId, fixedKind) {
     const out = [];
     $(containerId).querySelectorAll(".flowrow").forEach((row) => {
-      const amt = parseFloat(row.querySelector(".f-amt").value);
+      const amt = parseFloat(stripNum(row.querySelector(".f-amt").value));
       if (!isFinite(amt) || amt === 0) return;
       const start = Math.max(1, Math.round(parseFloat(row.querySelector(".f-start").value) || 1));
       const end = Math.max(start, Math.round(parseFloat(row.querySelector(".f-end").value) || start));
@@ -108,8 +143,8 @@
       capeB: clampNum("capeB", 0.5, 0, 10),         // slope b on the earnings yield
       cape0: currentCape(),                        // starting CAPE for forward mode (shipped)
     };
-    const fl = parseFloat($("spendFloor").value); if (isFinite(fl)) sp.floor = fl;
-    const cl = parseFloat($("spendCeiling").value); if (isFinite(cl)) sp.ceiling = cl;
+    const fl = parseFloat(stripNum($("spendFloor").value)); if (isFinite(fl)) sp.floor = fl;
+    const cl = parseFloat(stripNum($("spendCeiling").value)); if (isFinite(cl)) sp.ceiling = cl;
     return {
       initialValue: num("initialValue", 0),
       // Clamp to the dataset length so N can never blow up array allocations,
@@ -158,8 +193,10 @@
     } else {
       first = el("span", { class: "rowlabel", text: "Inflow" });
     }
-    const amt = el("input", { class: "f-amt", type: "number", min: "0", step: "any", placeholder: "$ / yr" });
+    const amt = el("input", { class: "f-amt", type: "text", inputmode: "numeric", autocomplete: "off", placeholder: "$ / yr" });
     if (v.amount != null) amt.value = v.amount;
+    attachMoney(amt);
+    formatMoneyInput(amt);
     const start = el("input", { class: "f-start", type: "number", min: "1", step: "1", placeholder: "start yr" });
     start.value = v.start != null ? v.start : 1;
     const end = el("input", { class: "f-end", type: "number", min: "1", step: "1", placeholder: "end yr" });
@@ -211,7 +248,7 @@
       " → this year’s rate ≈ " + (wr * 100).toFixed(2) + "% of balance";
     if (iv > 0) {
       let dollars = wr * iv, note = "";
-      const cl = parseFloat($("spendCeiling").value), fl = parseFloat($("spendFloor").value);
+      const cl = parseFloat(stripNum($("spendCeiling").value)), fl = parseFloat(stripNum($("spendFloor").value));
       if (isFinite(cl) && dollars > cl) { dollars = cl; note = " (your ceiling)"; }
       else if (isFinite(fl) && dollars < fl) { dollars = fl; note = " (your floor)"; }
       text += " ≈ " + money(Math.round(dollars)) + note;
@@ -348,6 +385,7 @@
     const pctOfPort = (max / num("initialValue", 1) * 100).toFixed(2);
     $("strategy").value = "constant"; syncStrategy();
     $("initialSpend").value = spend;
+    formatMoneyInput($("initialSpend"));
     if (basis === "montecarlo") { $("runMonteCarlo").checked = true; toggleMcOptions(); }
     msg("", true);
     run(); // re-run with the solved spending (run() leaves the solver result box alone)
@@ -377,8 +415,8 @@
     if (err) return msg(err, false);
     if ($("strategy").value !== "percent")
       return gmsg("Switch the withdrawal strategy to “Percentage of portfolio” to solve a guardrail.", false);
-    const flRaw = ($("spendFloor").value || "").trim();
-    const clRaw = ($("spendCeiling").value || "").trim();
+    const flRaw = stripNum($("spendFloor").value || "").trim();
+    const clRaw = stripNum($("spendCeiling").value || "").trim();
     const hasFloor = flRaw !== "" && isFinite(parseFloat(flRaw));
     const hasCeil = clRaw !== "" && isFinite(parseFloat(clRaw));
     let solveFor;
@@ -453,11 +491,13 @@
       } else {
         value = Math.floor(result.value / 100) * 100;
         $("spendCeiling").value = value;
+        formatMoneyInput($("spendCeiling"));
         lead = "Highest spending ceiling for ≥" + tgt + "% " + basisLabel + " success:";
       }
     } else { // floor
       value = result.atCap ? result.value : Math.floor(result.value / 100) * 100;
       $("spendFloor").value = value;
+      formatMoneyInput($("spendFloor"));
       lead = result.atCap
         ? "Floor can rise all the way to your ceiling (constant spending) and still keep ≥" + tgt + "% " + basisLabel + " success:"
         : "Highest safe spending floor for ≥" + tgt + "% " + basisLabel + " success:";
@@ -655,7 +695,8 @@
   }
 
   function renderLoan(sched) {
-    $("loanPayment").textContent = money(sched.payment);
+    // Exact dollars-and-cents: the payment is THE number people compare offers by.
+    $("loanPayment").textContent = "$" + sched.payment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const dur = (mo) => Math.floor(mo / 12) + "y " + (mo % 12) + "m";
     const cards = [
       statCard("Total interest", money(sched.totalInterest)),
@@ -739,7 +780,8 @@
   // ---------- shareable URL state ----------
   function gather() {
     const o = {};
-    PERSIST.forEach((id) => { const e = $(id); if (!e) return; o[id] = e.type === "checkbox" ? (e.checked ? 1 : 0) : e.value; });
+    // stripNum: share-links carry plain digits, not display commas.
+    PERSIST.forEach((id) => { const e = $(id); if (!e) return; o[id] = e.type === "checkbox" ? (e.checked ? 1 : 0) : stripNum(e.value); });
     o.inc = readFlows("incomeRows", "income").map((f) => [f.amount, f.start, f.end, f.cola ? 1 : 0]);
     o.adj = readFlows("adjustRows", null).map((f) => [f.kind === "income" ? 1 : 0, f.amount, f.start, f.end, f.cola ? 1 : 0]);
     return o;
@@ -784,6 +826,7 @@
     $("initialValue").addEventListener("input", syncStrategy);
     $("initialSpend").addEventListener("input", syncStrategy);
     ["capeA", "capeB", "spendFloor", "spendCeiling"].forEach((id) => $(id).addEventListener("input", updateCapeHint));
+    MONEY_IDS.forEach((id) => attachMoney($(id)));
     Object.keys(ALLOC).forEach((id) => $(id).addEventListener("input", updateAllocSum));
     $("inflationMode").addEventListener("change", toggleFixed);
     $("runMonteCarlo").addEventListener("change", toggleMcOptions);
@@ -851,6 +894,7 @@
     document.documentElement.setAttribute("data-theme", t);
     wire();
     loadHash();
+    MONEY_IDS.forEach((id) => formatMoneyInput($(id))); // defaults + hash values get commas
     syncStrategy(); updateAllocSum(); toggleFixed(); toggleMcOptions(); toggleMcBlock();
     run();
   }

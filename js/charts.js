@@ -10,6 +10,7 @@
 
   function fmtMoney(x) {
     const a = Math.abs(x), s = x < 0 ? "-$" : "$";
+    if (a >= 1e12) return s + (a / 1e12).toFixed(2) + "T"; // keeps near-cap values comma-free
     if (a >= 1e9) return s + (a / 1e9).toFixed(2) + "B";
     if (a >= 1e6) return s + (a / 1e6).toFixed(2) + "M";
     if (a >= 1e3) return s + (a / 1e3).toFixed(a >= 1e5 ? 0 : 1) + "k";

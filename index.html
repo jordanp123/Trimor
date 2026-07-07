@@ -58,7 +58,7 @@
         <h2>Portfolio &amp; time</h2>
         <div class="field">
           <label for="initialValue">Current portfolio</label>
-          <div class="prefixed"><span>$</span><input id="initialValue" type="number" min="0" step="any" value="1000000" /></div>
+          <div class="prefixed"><span>$</span><input id="initialValue" type="text" inputmode="numeric" autocomplete="off" value="1000000" /></div>
         </div>
         <div class="row2">
           <div class="field">
@@ -124,7 +124,7 @@
 
         <div class="field strat strat-constant strat-guyton">
           <label for="initialSpend">Initial annual spending</label>
-          <div class="prefixed"><span>$</span><input id="initialSpend" type="number" min="0" step="any" value="40000" /></div>
+          <div class="prefixed"><span>$</span><input id="initialSpend" type="text" inputmode="numeric" autocomplete="off" value="40000" /></div>
           <p class="hint" id="spendRateHint"></p>
         </div>
         <div class="field strat strat-percent">
@@ -148,8 +148,8 @@
           <div class="field"><label for="gkAdjust">Spending cut/raise</label><div class="suffixed"><input id="gkAdjust" type="number" min="1" max="25" step="1" value="10" /><span>%</span></div></div>
         </div>
         <div class="row2 strat strat-percent strat-vpw strat-cape">
-          <div class="field"><label for="spendFloor">Spending floor <span class="hint">today's $, optional</span></label><div class="prefixed"><span>$</span><input id="spendFloor" type="number" min="0" step="any" value="" /></div></div>
-          <div class="field"><label for="spendCeiling">Spending ceiling <span class="hint">today's $, optional</span></label><div class="prefixed"><span>$</span><input id="spendCeiling" type="number" min="0" step="any" value="" /></div></div>
+          <div class="field"><label for="spendFloor">Spending floor <span class="hint">today's $, optional</span></label><div class="prefixed"><span>$</span><input id="spendFloor" type="text" inputmode="numeric" autocomplete="off" value="" /></div></div>
+          <div class="field"><label for="spendCeiling">Spending ceiling <span class="hint">today's $, optional</span></label><div class="prefixed"><span>$</span><input id="spendCeiling" type="text" inputmode="numeric" autocomplete="off" value="" /></div></div>
         </div>
         <div class="field strat strat-percent guardbox">
           <div class="solver">
@@ -325,7 +325,7 @@
           <p class="hint">Mortgage, car, student loan — anything that amortizes.</p>
           <div class="field">
             <label for="loanAmount">Loan amount</label>
-            <div class="prefixed"><span>$</span><input id="loanAmount" type="number" min="0" step="any" value="350000" /></div>
+            <div class="prefixed"><span>$</span><input id="loanAmount" type="text" inputmode="numeric" autocomplete="off" value="350000" /></div>
           </div>
           <div class="row2">
             <div class="field"><label for="loanApr">Interest rate (APR)</label><div class="suffixed"><input id="loanApr" type="number" min="0" max="100" step="any" value="6.5" /><span>%</span></div></div>
@@ -333,7 +333,7 @@
           </div>
           <div class="field">
             <label for="loanExtra">Extra principal / month <span class="hint">optional</span></label>
-            <div class="prefixed"><span>$</span><input id="loanExtra" type="number" min="0" step="any" value="" /></div>
+            <div class="prefixed"><span>$</span><input id="loanExtra" type="text" inputmode="numeric" autocomplete="off" value="" /></div>
           </div>
         </section>
         <div class="actions"><button id="loanRunBtn" class="primary" type="submit">Calculate</button></div>
@@ -372,11 +372,11 @@
           <p class="hint">How a lump sum + regular additions grow over time.</p>
           <div class="field">
             <label for="compPrincipal">Current principal</label>
-            <div class="prefixed"><span>$</span><input id="compPrincipal" type="number" min="0" step="any" value="1500" /></div>
+            <div class="prefixed"><span>$</span><input id="compPrincipal" type="text" inputmode="numeric" autocomplete="off" value="1500" /></div>
           </div>
           <div class="field">
             <label for="compAddition">Annual addition <span class="hint">spread across compounding periods</span></label>
-            <div class="prefixed"><span>$</span><input id="compAddition" type="number" min="0" step="any" value="0" /></div>
+            <div class="prefixed"><span>$</span><input id="compAddition" type="text" inputmode="numeric" autocomplete="off" value="0" /></div>
           </div>
           <div class="row2">
             <div class="field"><label for="compRate">Interest rate</label><div class="suffixed"><input id="compRate" type="number" min="0" max="100" step="any" value="5" /><span>%</span></div></div>

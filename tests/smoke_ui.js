@@ -20,13 +20,22 @@ A(document.documentElement.getAttribute("data-theme") === "light" ||
 // Worker is undefined in this shim, so solve() takes its inline fallback -- which
 // runs the same applySolve()/run() machinery the worker's solveResult triggers.
 function fire(el, type) { (el && el._ev && el._ev[type] || []).forEach(function (fn) { fn({ preventDefault: function () {} }); }); }
+function unc(v) { return +String(v).replace(/,/g, ""); } // read a comma-formatted money input
+
+// Money inputs live-format with thousands separators (and every parse strips them).
+var ivEl = document.getElementById("initialValue");
+A(ivEl.value === "1,000,000", "money input formatted on init (" + ivEl.value + ")");
+ivEl.value = "2500000"; fire(ivEl, "input");
+A(ivEl.value === "2,500,000", "typing reformats with commas (" + ivEl.value + ")");
+ivEl.value = "1000000"; fire(ivEl, "input"); // restore the default for the sections below
+
 var spendBefore = document.getElementById("initialSpend").value;
 var basisBtns = document.getElementById("solveBasis").querySelectorAll("button");
 fire(basisBtns[1], "click");                       // select "Monte Carlo" basis
 document.getElementById("targetSuccess").value = "90";
 fire(document.getElementById("solveBtn"), "click"); // click "Find max spending for"
 var spendAfter = document.getElementById("initialSpend").value;
-A(spendAfter !== spendBefore && +spendAfter > 25000 && +spendAfter < 70000,
+A(spendAfter !== spendBefore && unc(spendAfter) > 25000 && unc(spendAfter) < 70000,
   "MC solver changed spending (" + spendBefore + " -> " + spendAfter + ")");
 A(document.getElementById("runMonteCarlo").checked, "MC solve enabled the Monte Carlo view");
 A(/%$/.test(document.getElementById("successBig").textContent), "results still render after MC solve");
@@ -40,7 +49,7 @@ document.getElementById("spendCeiling").value = "60000";
 document.getElementById("spendFloor").value = "";
 fire(document.getElementById("gsolveBtn"), "click");
 var solvedFloor = document.getElementById("spendFloor").value;
-A(solvedFloor !== "" && +solvedFloor > 0 && +solvedFloor <= 60000,
+A(solvedFloor !== "" && unc(solvedFloor) > 0 && unc(solvedFloor) <= 60000,
   "guardrail solve set a floor within (0, ceiling] (" + solvedFloor + ")");
 A(document.getElementById("gsolveResult").hidden === false &&
   document.getElementById("gsolveResult").children.length > 0, "guardrail result box shown with content");
