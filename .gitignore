@@ -1,0 +1,11 @@
+# macOS noise
+.DS_Store
+
+# Data-pipeline download cache (reproducible; full-page copies of third-party
+# sites don't belong in a public repo). Note: fetch_mortality.py reads a
+# browser-saved SSA page from here -- re-save it manually if you ever need to
+# regenerate js/mortality-data.js (the generated file IS committed).
+tools/.cache/
+
+# Scratch
+*.tmp

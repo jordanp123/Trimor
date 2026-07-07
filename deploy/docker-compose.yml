@@ -1,0 +1,45 @@
+services:
+  website:
+    build: .
+    container_name: WebSWR
+    read_only: true
+    restart: unless-stopped
+    security_opt:  #Have to disable if using the Ubuntu SNAP package for docker
+      - no-new-privileges=true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 256M
+          pids: 512
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=256M
+      - /run:rw,noexec,nosuid,nodev,size=64M
+      - /var/cache/nginx/:rw,noexec,nosuid,nodev,size=256M
+    networks:
+      - web
+  cloudflare_tunnel:
+    user: 7000:7000
+    container_name: cloudflared-tunnel-FBCC
+    image: cloudflare/cloudflared
+    read_only: true
+    cpu_shares: 768
+    deploy:
+     resources:
+       limits:
+          memory: 256M
+          pids: 4096
+    cap_drop:
+      - ALL
+    security_opt:
+        - no-new-privileges=true
+    restart: unless-stopped
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=
+    networks:
+      web:
+networks:
+  web:

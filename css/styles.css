@@ -1,0 +1,335 @@
+/* WebSWR styles. System font stack only -- no web fonts, no network. */
+:root {
+  --bg: #f4f6fb;
+  --panel: #ffffff;
+  --panel-2: #f8fafc;
+  --ink: #1d2433;
+  --ink-soft: #5b667a;
+  --line: #e2e7f0;
+  --line-strong: #cfd6e4;
+  --accent: #2f6fed;
+  --accent-ink: #ffffff;
+  --good: #15a06a;
+  --warn: #e69500;
+  --bad: #e2483d;
+  --shadow: 0 1px 3px rgba(20, 30, 60, 0.06), 0 8px 28px rgba(20, 30, 60, 0.06);
+  /* chart palette (read by charts.js) */
+  --chart-axis: #9aa6bd;
+  --chart-grid: rgba(140, 150, 170, 0.16);
+  --chart-text: #6b7689;
+  --chart-band: rgba(47, 111, 237, 0.12);
+  --chart-band2: rgba(47, 111, 237, 0.24);
+  --chart-median: #2f6fed;
+  --chart-worst: #e2483d;
+  --chart-best: #15a06a;
+  --chart-spag: rgba(120, 132, 156, 0.16);
+  --chart-bar: #6c97f0;
+  --chart-dead: #9aa3b4;
+  --chart-tip-bg: #1c2230;
+  --chart-tip-fg: #f3f5fa;
+}
+[data-theme="dark"] {
+  --bg: #0e1320;
+  --panel: #161d2c;
+  --panel-2: #1b2334;
+  --ink: #e8edf6;
+  --ink-soft: #9aa6bd;
+  --line: #273141;
+  --line-strong: #344256;
+  --accent: #4f86ff;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.35);
+  --chart-axis: #6b7689;
+  --chart-grid: rgba(150, 165, 195, 0.13);
+  --chart-text: #8b97ad;
+  --chart-band: rgba(79, 134, 255, 0.14);
+  --chart-band2: rgba(79, 134, 255, 0.30);
+  --chart-spag: rgba(150, 165, 195, 0.14);
+  --chart-bar: #4f86ff;
+  --chart-tip-bg: #f3f5fa;
+  --chart-tip-fg: #1c2230;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-text-size-adjust: 100%;
+}
+h1, h2, h3 { margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+h2 { font-size: 15px; }
+h3 { font-size: 14px; }
+/* Ensure the [hidden] attribute always wins, even over author display rules
+   (e.g. .modal-overlay { display:flex }). Without this the Help modal would be
+   stuck open. */
+[hidden] { display: none !important; }
+.hint { color: var(--ink-soft); font-weight: 400; font-size: 12px; }
+.muted { color: var(--ink-soft); }
+
+/* ---------- top bar ---------- */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; padding: 14px 20px; background: var(--panel);
+  border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 10;
+}
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand h1 { font-size: 18px; }
+.tagline { margin: 1px 0 0; color: var(--ink-soft); font-size: 12.5px; }
+.logo, .brand .logo {
+  width: 34px; height: 34px; border-radius: 9px; flex: none;
+  background:
+    linear-gradient(135deg, var(--accent), #7aa6ff);
+  position: relative;
+}
+.logo::after {
+  content: ""; position: absolute; inset: 0;
+  background: no-repeat center/20px 20px
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M6 22 L13 14 L18 19 L26 9' stroke='white' stroke-width='2.8' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+.topbar-actions { display: flex; align-items: center; gap: 10px; }
+.badge {
+  font-size: 12px; color: var(--ink-soft); background: var(--panel-2);
+  border: 1px solid var(--line); padding: 5px 10px; border-radius: 999px; white-space: nowrap;
+}
+.viewtabs { margin-right: 4px; }
+@media (max-width: 640px) {
+  /* Stack the bar: brand row, then a full-width actions row. The actions use a
+     grid -- col 1 (the view tabs) takes the leftover width and can shrink via
+     minmax(0,1fr); the Help/theme buttons sit in `auto` columns so they always
+     keep their natural size. (flex `justify-content` was packing the row off the
+     right edge here, clipping Help + the theme toggle.) */
+  .topbar { display: block; padding: 12px 14px; }
+  .topbar .tagline { display: none; }
+  .brand { margin-bottom: 8px; }
+  .topbar-actions {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 6px; align-items: center;
+  }
+  .badge { display: none; }
+  #viewTabs { margin-right: 0; }
+  /* ID specificity to beat the later `.seg button` rule. */
+  #viewTabs button { padding: 5px 8px; font-size: 11.5px; }
+}
+
+/* ---------- layout ---------- */
+.layout {
+  display: grid; grid-template-columns: minmax(340px, 430px) minmax(0, 1fr);
+  gap: 18px; padding: 18px; max-width: 1320px; margin: 0 auto; align-items: start;
+}
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+.inputs { padding: 4px 18px 18px; position: sticky; top: 76px; max-height: calc(100vh - 96px); overflow: auto; }
+.results { padding: 18px; min-width: 0; }
+
+/* ---------- form ---------- */
+.group { padding: 16px 0; border-bottom: 1px solid var(--line); }
+.group:last-of-type { border-bottom: 0; }
+.group > h2 { margin-bottom: 10px; }
+h2.inline { display: inline; font-size: 15px; }
+.field { margin: 10px 0; min-width: 0; }
+.field > label { display: block; font-size: 12.5px; color: var(--ink-soft); margin-bottom: 5px; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+input, select {
+  width: 100%; min-width: 0; padding: 9px 10px; font: inherit; color: var(--ink);
+  background: var(--panel-2); border: 1px solid var(--line-strong); border-radius: 9px;
+  appearance: none; -webkit-appearance: none;
+}
+/* A <select>'s intrinsic min-width is its longest <option> (e.g. the long
+   strategy labels). text-overflow lets the closed control clip instead of
+   forcing the whole form wider than a narrow screen. */
+select { text-overflow: ellipsis; }
+input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+input[type="number"] { font-variant-numeric: tabular-nums; -moz-appearance: textfield; }
+/* Hide the native up/down spinners — they crowd narrow numeric fields and make
+   the value hard to read. Users type the value directly. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+/* Checkboxes must keep a visible checked state (the global appearance:none above strips it). */
+input[type="checkbox"] {
+  appearance: auto; -webkit-appearance: auto;
+  width: 16px; height: 16px; padding: 0; border: 0; border-radius: 0;
+  background: none; accent-color: var(--accent); cursor: pointer; flex: none;
+}
+select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a8499' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 11px center; padding-right: 30px;
+}
+.prefixed, .suffixed { display: flex; align-items: stretch; }
+.prefixed > span, .suffixed > span {
+  display: inline-flex; align-items: center; padding: 0 10px; color: var(--ink-soft);
+  background: var(--panel-2); border: 1px solid var(--line-strong);
+}
+.prefixed > span { border-right: 0; border-radius: 9px 0 0 9px; }
+.prefixed > input { border-radius: 0 9px 9px 0; }
+.suffixed > input { border-radius: 9px 0 0 9px; border-right: 0; }
+.suffixed > span { border-radius: 0 9px 9px 0; }
+.suffixed.compact { width: 88px; }
+/* Inputs in a $/% group must shrink with their container (min-width:0 overrides
+   the flex default of `auto`, which otherwise forces horizontal overflow on
+   narrow screens). */
+.prefixed > input, .suffixed > input { width: auto; flex: 1 1 0; min-width: 0; }
+.prefixed, .suffixed { min-width: 0; }
+
+fieldset.alloc { border: 1px solid var(--line); border-radius: 11px; padding: 8px 12px 12px; margin: 12px 0 0; }
+fieldset.alloc legend { padding: 0 6px; font-size: 12.5px; color: var(--ink-soft); }
+.alloc-sum { font-weight: 650; color: var(--good); }
+.alloc-sum.bad { color: var(--bad); }
+details.advanced, .group details { margin-top: 4px; }
+details > summary { cursor: pointer; color: var(--accent); font-size: 13px; padding: 4px 0; user-select: none; }
+.group > details > summary { color: var(--ink); }
+details > summary::-webkit-details-marker { color: var(--ink-soft); }
+.rows { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+.flowrow, .flowhead { display: grid; grid-template-columns: minmax(56px, 0.9fr) 1fr 50px 50px 46px 30px; gap: 6px; align-items: center; }
+.flowhead { padding: 0 2px 2px; }
+.fh { font-size: 10px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.04em; text-align: center; }
+.fh:nth-child(1) { text-align: left; }
+.fh:nth-child(2) { text-align: left; }
+.rowlabel { font-size: 12px; color: var(--ink-soft); white-space: nowrap; }
+.flowrow input, .flowrow select { padding: 7px 8px; min-width: 0; }
+.flowrow .col-cola { justify-self: center; }
+.small { font-size: 11.5px; line-height: 1.45; }
+.flowrow .col-cola { display: flex; align-items: center; justify-content: center; }
+.flowrow .rm { padding: 6px 9px; }
+.checkline { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.checkline input { width: auto; }
+.mc-options { margin-top: 10px; }
+.spend-rate-hint { margin-top: 4px; }
+
+/* strategy-specific fields appear only for the active strategy */
+.strat { display: none; }
+.strat.show { display: block; }
+.row2.strat.show { display: grid; }
+
+/* ---------- buttons ---------- */
+button { font: inherit; cursor: pointer; border-radius: 9px; border: 1px solid transparent; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); padding: 11px 16px; font-weight: 600; }
+.primary:hover { filter: brightness(1.05); }
+.secondary { background: var(--panel-2); color: var(--ink); border-color: var(--line-strong); padding: 9px 12px; }
+.ghost { background: transparent; color: var(--ink-soft); border-color: var(--line-strong); padding: 8px 11px; }
+.ghost:hover { color: var(--ink); border-color: var(--accent); }
+/* The solver buttons are red so they clearly read as a clickable action. */
+#solveBtn, #gsolveBtn { background: var(--bad); color: #fff; border-color: var(--bad); font-weight: 600; }
+#solveBtn:hover, #gsolveBtn:hover { filter: brightness(1.07); }
+#themeBtn { width: 36px; height: 34px; padding: 0; font-size: 16px; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-top: 16px; }
+.actions .primary { flex: 1 1 100%; }
+.solver { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.solver-tail { color: var(--ink-soft); font-size: 13px; }
+.util { display: flex; gap: 6px; margin-left: auto; }
+.add { width: 100%; }
+.formmsg { margin: 10px 0 0; font-size: 13px; min-height: 18px; color: var(--bad); }
+.formmsg.ok { color: var(--good); }
+.solve-result {
+  margin-top: 10px; padding: 12px 14px; border-radius: 10px; line-height: 1.5;
+  background: rgba(47, 111, 237, 0.10); border: 1px solid rgba(47, 111, 237, 0.35);
+  font-size: 12.5px; color: var(--ink);
+}
+.solve-result strong { font-size: 19px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+[data-theme="dark"] .solve-result { background: rgba(79, 134, 255, 0.12); border-color: rgba(79, 134, 255, 0.42); }
+/* Error variant (infeasible guardrail solve, bad input). */
+.solve-result.err { background: rgba(226, 72, 61, 0.10); border-color: rgba(226, 72, 61, 0.40); }
+.solve-result.err strong { color: var(--bad); }
+[data-theme="dark"] .solve-result.err { background: rgba(226, 72, 61, 0.14); border-color: rgba(226, 72, 61, 0.45); }
+/* Guardrail "work back" solver sits just under the floor/ceiling inputs. */
+.guardbox { margin-top: 6px; padding-top: 12px; border-top: 1px dashed var(--line); }
+/* CAPE-based strategy: read-only current-CAPE + rate readout (auto-updated daily). */
+.capebox { margin-top: 4px; }
+#capeRateNow { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* ---------- results ---------- */
+.result-head { display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: stretch; }
+.success-card {
+  border-radius: 12px; padding: 16px 20px; color: #fff; min-width: 168px;
+  background: linear-gradient(135deg, #6b7689, #4b5566); display: flex; flex-direction: column; justify-content: center;
+}
+.success-card.good { background: linear-gradient(135deg, #12a06a, #0c7d54); }
+.success-card.warn { background: linear-gradient(135deg, #e69500, #c97d00); }
+.success-card.bad { background: linear-gradient(135deg, #e2483d, #c0392e); }
+.success-big { font-size: 40px; font-weight: 720; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.success-label { font-size: 12.5px; opacity: 0.92; margin-top: 6px; }
+.head-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.stat { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; }
+.stat .k { font-size: 11.5px; color: var(--ink-soft); }
+.stat .v { font-size: 16px; font-weight: 640; font-variant-numeric: tabular-nums; margin-top: 2px; }
+
+.progress { margin: 14px 0 0; height: 10px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; position: relative; overflow: hidden; }
+.progress-bar { height: 100%; width: 0; background: var(--accent); transition: width 0.1s linear; }
+.progress-label { position: absolute; right: 8px; top: -20px; font-size: 11.5px; color: var(--ink-soft); }
+
+.chart-card, .detail-card { margin-top: 16px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+.chart-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.chart { width: 100%; height: 360px; display: block; }
+.chart.short { height: 240px; }
+.chart-toggles { display: flex; gap: 8px; flex-wrap: wrap; }
+.seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 9px; overflow: hidden; }
+.seg button { background: var(--panel); color: var(--ink-soft); border: 0; padding: 6px 12px; border-radius: 0; font-size: 12.5px; }
+.seg button.seg-on { background: var(--accent); color: #fff; }
+.seg button:disabled { opacity: 0.45; cursor: not-allowed; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; font-size: 12px; color: var(--ink-soft); }
+.legend i.sw { display: inline-block; width: 14px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: middle; }
+.sw.median { background: var(--chart-median); }
+.sw.band { background: var(--chart-band); }
+.sw.band2 { background: var(--chart-band2); }
+.sw.best { background: var(--chart-best); }
+.sw.worst { background: var(--chart-worst); }
+.sw.dead { background: var(--chart-dead); }
+
+.detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top: 10px; }
+.detail-block h4 { margin: 0 0 6px; font-size: 12.5px; color: var(--ink-soft); font-weight: 600; }
+.kv { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; border-bottom: 1px dashed var(--line); font-variant-numeric: tabular-nums; }
+.kv:last-child { border-bottom: 0; }
+.kv .k { color: var(--ink-soft); }
+.tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; font-weight: 600; }
+.tag.ok { background: rgba(21, 160, 106, 0.14); color: var(--good); }
+.tag.no { background: rgba(226, 72, 61, 0.14); color: var(--bad); }
+.disclaimer { margin: 16px 2px 0; font-size: 11.5px; color: var(--ink-soft); line-height: 1.5; }
+
+/* ---------- help modal ---------- */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 100; padding: 20px;
+  background: rgba(10, 15, 25, 0.55);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: var(--shadow); width: min(680px, 100%); max-height: 86vh;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 15px 20px; border-bottom: 1px solid var(--line);
+}
+.modal-head h2 { font-size: 17px; }
+.modal-head .ghost { width: 34px; height: 32px; padding: 0; font-size: 14px; }
+.modal-body { padding: 4px 22px 22px; overflow: auto; line-height: 1.55; }
+.modal-body h3 { margin: 20px 0 6px; font-size: 14px; color: var(--accent); }
+.modal-body p { margin: 8px 0; }
+.modal-body ul, .modal-body ol { margin: 8px 0; padding-left: 20px; }
+.modal-body li { margin: 5px 0; }
+.modal-body em { color: var(--ink-soft); font-style: normal; font-weight: 600; }
+.modal-disclaimer { margin-top: 18px !important; padding-top: 12px; border-top: 1px solid var(--line); font-size: 12px; color: var(--ink-soft); }
+
+/* ---------- responsive ---------- */
+@media (max-width: 920px) {
+  .layout { grid-template-columns: 1fr; }
+  .inputs { position: static; max-height: none; overflow: visible; }
+  .result-head { grid-template-columns: 1fr; }
+}
+@media (max-width: 520px) {
+  .row2 { grid-template-columns: 1fr; }
+  .flowrow { grid-template-columns: 1fr 1fr; }
+  .flowhead { display: none; }
+  .topbar .tagline { display: none; }
+  .layout { padding: 12px; gap: 12px; }
+  .inputs { padding-left: 14px; padding-right: 14px; }
+  .results { padding: 14px; }
+  .solver, .actions { gap: 8px; }
+}
+/* Final guard: never allow a stray element to create a horizontal scrollbar.
+   `clip` (unlike `hidden`) doesn't create a scroll container, so the sticky
+   inputs panel still works on desktop. */
+/* Final guard: never let a stray element create a horizontal scrollbar. `clip`
+   (unlike `hidden`) doesn't create a scroll container, so sticky still works. */
+@media (max-width: 920px) { body { overflow-x: clip; } }
+

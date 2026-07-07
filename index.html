@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!--
+    Strict Content-Security-Policy. The app loads NOTHING from the network:
+    no CDNs, no fonts, no analytics, no XHR/fetch (connect-src 'none'). Every
+    script and style is same-origin and there is no inline script, no eval, and
+    no inline event handlers. This is the primary defense the project asked for.
+  -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'none';
+    script-src 'self';
+    style-src 'self';
+    img-src 'self' data:;
+    font-src 'self';
+    connect-src 'none';
+    worker-src 'self';
+    manifest-src 'self';
+    object-src 'none';
+    child-src 'none';
+    base-uri 'none';
+    form-action 'none';
+    frame-ancestors 'none';
+  " />
+  <meta name="referrer" content="no-referrer" />
+  <title>WebSWR — Safe Withdrawal Rate & Monte Carlo</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232f6fed'/%3E%3Cpath d='M6 22 L13 14 L18 19 L26 9' stroke='white' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"></span>
+      <div>
+        <h1>WebSWR</h1>
+        <p class="tagline">Historical &amp; Monte Carlo retirement simulator — 100% in your browser</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <div class="seg viewtabs" id="viewTabs" role="tablist">
+        <button type="button" data-view="main" class="seg-on">Retirement</button>
+        <button type="button" data-view="loan">Loan calc</button>
+        <button type="button" data-view="compound">Compound</button>
+      </div>
+      <span class="badge" title="No network requests, no tracking, no accounts. All math runs locally.">🔒 Offline &amp; private</span>
+      <button id="helpBtn" class="ghost" type="button" title="How WebSWR works">Help</button>
+      <button id="themeBtn" class="ghost" type="button" title="Toggle light/dark">◐</button>
+    </div>
+  </header>
+
+  <main>
+  <div id="viewMain" class="layout">
+    <!-- ============================== INPUTS ============================== -->
+    <form id="inputs" class="panel inputs" autocomplete="off" novalidate>
+      <section class="group">
+        <h2>Portfolio &amp; time</h2>
+        <div class="field">
+          <label for="initialValue">Current portfolio</label>
+          <div class="prefixed"><span>$</span><input id="initialValue" type="number" min="0" step="any" value="1000000" /></div>
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label for="years">Retirement length (years)</label>
+            <input id="years" type="number" min="1" max="98" step="1" value="30" />
+          </div>
+          <div class="field">
+            <label for="feeRate">Annual fees <span class="hint">expense ratio</span></label>
+            <div class="suffixed"><input id="feeRate" type="number" min="0" max="5" step="0.01" value="0.10" /><span>%</span></div>
+          </div>
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label for="currentAge">Your age now <span class="hint">for longevity</span></label>
+            <input id="currentAge" type="number" min="18" max="110" step="1" value="65" />
+          </div>
+          <div class="field">
+            <label for="sex">Sex <span class="hint">SSA life table</span></label>
+            <select id="sex">
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="blended">Average</option>
+            </select>
+          </div>
+        </div>
+
+        <fieldset class="alloc">
+          <legend>Asset allocation <span id="allocSum" class="alloc-sum">100%</span></legend>
+          <div class="row2">
+            <div class="field"><label for="allocStocks">Stocks (S&amp;P 500)</label><div class="suffixed"><input id="allocStocks" class="alloc-input" type="number" min="0" max="100" step="1" value="75" /><span>%</span></div></div>
+            <div class="field"><label for="allocBonds">Bonds (10-yr Treasury)</label><div class="suffixed"><input id="allocBonds" class="alloc-input" type="number" min="0" max="100" step="1" value="25" /><span>%</span></div></div>
+          </div>
+          <div class="row2">
+            <div class="field"><label for="allocGold">Gold</label><div class="suffixed"><input id="allocGold" class="alloc-input" type="number" min="0" max="100" step="1" value="0" /><span>%</span></div></div>
+            <div class="field"><label for="allocCash">Cash (3-mo T-Bill)</label><div class="suffixed"><input id="allocCash" class="alloc-input" type="number" min="0" max="100" step="1" value="0" /><span>%</span></div></div>
+          </div>
+          <details class="advanced">
+            <summary>More asset classes</summary>
+            <div class="row2">
+              <div class="field"><label for="allocCorp">Corporate bonds (Baa)</label><div class="suffixed"><input id="allocCorp" class="alloc-input" type="number" min="0" max="100" step="1" value="0" /><span>%</span></div></div>
+              <div class="field"><label for="allocReit">Real estate</label><div class="suffixed"><input id="allocReit" class="alloc-input" type="number" min="0" max="100" step="1" value="0" /><span>%</span></div></div>
+            </div>
+            <div class="row2">
+              <div class="field"><label for="allocSmallcap">US small cap</label><div class="suffixed"><input id="allocSmallcap" class="alloc-input" type="number" min="0" max="100" step="1" value="0" /><span>%</span></div></div>
+              <div class="field"></div>
+            </div>
+          </details>
+        </fieldset>
+      </section>
+
+      <section class="group">
+        <h2>Spending plan</h2>
+        <div class="field">
+          <label for="strategy">Withdrawal strategy</label>
+          <select id="strategy">
+            <option value="constant">Constant dollar (inflation-adjusted) — the "4% rule"</option>
+            <option value="percent">Percentage of portfolio</option>
+            <option value="cape">CAPE-based (Big ERN dynamic rule)</option>
+            <option value="guyton">Guyton-Klinger guardrails</option>
+            <option value="vpw">Variable percentage (VPW / amortization)</option>
+          </select>
+        </div>
+
+        <div class="field strat strat-constant strat-guyton">
+          <label for="initialSpend">Initial annual spending</label>
+          <div class="prefixed"><span>$</span><input id="initialSpend" type="number" min="0" step="any" value="40000" /></div>
+          <p class="hint" id="spendRateHint"></p>
+        </div>
+        <div class="field strat strat-percent">
+          <label for="spendPercent">Withdrawal rate</label>
+          <div class="suffixed"><input id="spendPercent" type="number" min="0" max="20" step="0.1" value="4" /><span>%</span></div>
+        </div>
+        <div class="field strat strat-vpw">
+          <label for="vpwReturn">Assumed real return <span class="hint">amortization rate</span></label>
+          <div class="suffixed"><input id="vpwReturn" type="number" min="0" max="10" step="0.1" value="3.4" /><span>%</span></div>
+        </div>
+        <div class="row2 strat strat-cape">
+          <div class="field"><label for="capeA">Base rate <span class="hint">a — intercept</span></label><div class="suffixed"><input id="capeA" type="number" min="0" max="10" step="0.05" value="1.75" /><span>%</span></div></div>
+          <div class="field"><label for="capeB">Earnings-yield weight <span class="hint">b × (1/CAPE)</span></label><input id="capeB" type="number" min="0" max="2" step="0.05" value="0.5" /></div>
+        </div>
+        <div class="field strat strat-cape capebox">
+          <p class="hint" id="capeRateNow"></p>
+          <p class="hint">The current CAPE updates automatically each day on the server; nothing is fetched in your browser. Historical backtests use each start year's <em>own</em> CAPE, so backtested spending will differ from this today's-CAPE readout.</p>
+        </div>
+        <div class="row2 strat strat-guyton">
+          <div class="field"><label for="gkGuard">Guardrail band</label><div class="suffixed"><input id="gkGuard" type="number" min="5" max="50" step="1" value="20" /><span>%</span></div></div>
+          <div class="field"><label for="gkAdjust">Spending cut/raise</label><div class="suffixed"><input id="gkAdjust" type="number" min="1" max="25" step="1" value="10" /><span>%</span></div></div>
+        </div>
+        <div class="row2 strat strat-percent strat-vpw strat-cape">
+          <div class="field"><label for="spendFloor">Spending floor <span class="hint">today's $, optional</span></label><div class="prefixed"><span>$</span><input id="spendFloor" type="number" min="0" step="any" value="" /></div></div>
+          <div class="field"><label for="spendCeiling">Spending ceiling <span class="hint">today's $, optional</span></label><div class="prefixed"><span>$</span><input id="spendCeiling" type="number" min="0" step="any" value="" /></div></div>
+        </div>
+        <div class="field strat strat-percent guardbox">
+          <div class="solver">
+            <button id="gsolveBtn" class="secondary" type="button">Solve the blank guardrail for</button>
+            <div class="suffixed compact"><input id="gsolveTarget" type="number" min="1" max="100" step="1" value="95" /><span>%</span></div>
+            <span class="solver-tail">success, using</span>
+            <div class="seg" id="gsolveBasis" role="tablist">
+              <button type="button" data-basis="historical" class="seg-on">Historical</button>
+              <button type="button" data-basis="montecarlo">Monte Carlo</button>
+            </div>
+          </div>
+          <p class="hint">Fill in <strong>one</strong> of the floor/ceiling above and leave the other blank — I'll work back the blank one so a percentage-of-portfolio plan hits this success rate. (Floor blank → I solve the highest safe floor; ceiling blank → the highest cap you can afford.)</p>
+          <div id="gsolveResult" class="solve-result" role="status" hidden></div>
+        </div>
+
+        <div class="row2">
+          <div class="field">
+            <label for="inflationMode">Inflation</label>
+            <select id="inflationMode">
+              <option value="cpi">Historical CPI</option>
+              <option value="fixed">Fixed rate</option>
+            </select>
+          </div>
+          <div class="field" id="fixedInflationWrap" hidden>
+            <label for="fixedInflation">Fixed inflation</label>
+            <div class="suffixed"><input id="fixedInflation" type="number" min="0" max="20" step="0.1" value="3" /><span>%</span></div>
+          </div>
+          <div class="field">
+            <label for="taxRate">Effective tax on withdrawals <span class="hint">simplified</span></label>
+            <div class="suffixed"><input id="taxRate" type="number" min="0" max="60" step="1" value="0" /><span>%</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="group">
+        <details>
+          <summary><h2 class="inline">Income (Social Security, pensions)</h2></summary>
+          <p class="hint">Money coming in — Social Security, a pension, an annuity. Set the annual amount and the retirement years it runs (<strong>year&nbsp;1 = your first year retired</strong>), and tick <strong>COLA</strong> if it should grow with inflation. Inflows reduce what you withdraw from the portfolio.</p>
+          <div id="incomeRows" class="rows"></div>
+          <button id="addIncome" class="ghost add" type="button">+ Add income</button>
+        </details>
+      </section>
+
+      <section class="group">
+        <details>
+          <summary><h2 class="inline">Extra expenses / income (one-time or recurring)</h2></summary>
+          <p class="hint">One-off or recurring changes. Choose <strong>Expense</strong> (e.g. a new roof in year 10) or <strong>Income</strong> (e.g. part-time work in years 1–5), then the annual amount, the start/end retirement years, and COLA.</p>
+          <div id="adjustRows" class="rows"></div>
+          <button id="addAdjust" class="ghost add" type="button">+ Add adjustment</button>
+        </details>
+      </section>
+
+      <section class="group">
+        <h2>Monte Carlo</h2>
+        <label class="checkline"><input id="runMonteCarlo" type="checkbox" /> Also run a Monte Carlo simulation</label>
+        <div id="mcOptions" class="mc-options" hidden>
+          <div class="row2">
+            <div class="field">
+              <label for="mcMethod">Method</label>
+              <select id="mcMethod">
+                <option value="bootstrap">Bootstrap (resample years)</option>
+                <option value="block">Block bootstrap (preserve streaks)</option>
+                <option value="parametric">Parametric (normal)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="mcTrials">Trials</label>
+              <input id="mcTrials" type="number" min="100" max="50000" step="100" value="10000" />
+            </div>
+          </div>
+          <div class="row2">
+            <div class="field" id="mcBlockWrap" hidden><label for="mcBlock">Block length (years)</label><input id="mcBlock" type="number" min="1" max="20" step="1" value="5" /></div>
+            <div class="field"><label for="mcSeed">Random seed <span class="hint">reproducible</span></label><input id="mcSeed" type="number" min="0" step="1" value="12345" /></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="actions">
+        <button id="runBtn" class="primary" type="submit">Run simulation</button>
+        <div class="solver">
+          <button id="solveBtn" class="secondary" type="button">Find max spending for</button>
+          <div class="suffixed compact"><input id="targetSuccess" type="number" min="1" max="100" step="1" value="100" /><span>%</span></div>
+          <span class="solver-tail">success, using</span>
+          <div class="seg" id="solveBasis" role="tablist">
+            <button type="button" data-basis="historical" class="seg-on">Historical</button>
+            <button type="button" data-basis="montecarlo">Monte Carlo</button>
+          </div>
+        </div>
+        <div class="util">
+          <button id="shareBtn" class="ghost" type="button" title="Copy a link that restores these exact inputs">Copy link</button>
+          <button id="resetBtn" class="ghost" type="button">Reset</button>
+        </div>
+      </div>
+      <p id="formMsg" class="formmsg" role="alert"></p>
+      <div id="solveResult" class="solve-result" role="status" hidden></div>
+    </form>
+
+    <!-- ============================== RESULTS ============================== -->
+    <div class="panel results" id="results">
+      <div class="result-head">
+        <div class="success-card" id="successCard">
+          <div class="success-big" id="successBig">—</div>
+          <div class="success-label" id="successLabel">Run a simulation to begin</div>
+        </div>
+        <div class="head-stats" id="headStats"></div>
+      </div>
+
+      <div id="progressWrap" class="progress" hidden>
+        <div class="progress-bar" id="progressBar"></div>
+        <span class="progress-label" id="progressLabel">Running Monte Carlo…</span>
+      </div>
+
+      <section class="chart-card">
+        <div class="chart-head">
+          <h3>Portfolio balance over time <span class="hint" id="trajUnit">real / today's $</span></h3>
+          <div class="chart-toggles">
+            <div class="seg" id="dollarMode" role="tablist">
+              <button type="button" data-dollar="real" class="seg-on">Real</button>
+              <button type="button" data-dollar="nominal">Nominal</button>
+            </div>
+            <div class="seg" id="trajMode" role="tablist">
+              <button type="button" data-mode="historical" class="seg-on">Historical</button>
+              <button type="button" data-mode="montecarlo" disabled>Monte Carlo</button>
+            </div>
+          </div>
+        </div>
+        <canvas id="trajCanvas" class="chart" height="360" aria-label="Portfolio trajectories"></canvas>
+        <div class="legend">
+          <span><i class="sw median"></i>Median</span>
+          <span><i class="sw band2"></i>25–75%</span>
+          <span><i class="sw band"></i>10–90%</span>
+          <span><i class="sw best"></i>Best cycle</span>
+          <span><i class="sw worst"></i>Worst cycle</span>
+        </div>
+      </section>
+
+      <section class="chart-card">
+        <div class="chart-head"><h3>Ending portfolio distribution <span class="hint">real / today's $ · log scale</span></h3></div>
+        <canvas id="histCanvas" class="chart short" height="240" aria-label="Ending value histogram"></canvas>
+      </section>
+
+      <section class="chart-card" id="rbdCard">
+        <div class="chart-head"><h3>Will your money outlast you? <span class="hint" id="rbdSub">SSA mortality × your outcomes</span></h3></div>
+        <canvas id="rbdCanvas" class="chart short" height="240" aria-label="Probability alive with money, alive but broke, or deceased"></canvas>
+        <div class="legend">
+          <span><i class="sw best"></i>Alive, money lasts</span>
+          <span><i class="sw worst"></i>Alive, but broke</span>
+          <span><i class="sw dead"></i>Deceased</span>
+        </div>
+      </section>
+
+      <section class="detail-card">
+        <h3>Details</h3>
+        <div id="detailBody" class="detail-grid">
+          <p class="muted">Results and representative cycles appear here after a run.</p>
+        </div>
+      </section>
+
+      <p class="disclaimer">
+        Educational tool, not financial advice. Past returns do not predict the future.
+        Data: 1928–2025 from Aswath Damodaran (NYU Stern) total returns + BLS CPI-U inflation;
+        1871–1927 reconstructed from Robert Shiller's annual data (stocks, bonds, inflation).
+        Everything runs locally in your browser — no network, no tracking.
+      </p>
+    </div>
+    </div><!-- /#viewMain -->
+
+    <!-- ===================== LOAN / AMORTIZATION ===================== -->
+    <div id="viewLoan" class="layout" hidden>
+      <form id="loanInputs" class="panel inputs" autocomplete="off" novalidate>
+        <section class="group">
+          <h2>Loan details</h2>
+          <p class="hint">Mortgage, car, student loan — anything that amortizes.</p>
+          <div class="field">
+            <label for="loanAmount">Loan amount</label>
+            <div class="prefixed"><span>$</span><input id="loanAmount" type="number" min="0" step="any" value="350000" /></div>
+          </div>
+          <div class="row2">
+            <div class="field"><label for="loanApr">Interest rate (APR)</label><div class="suffixed"><input id="loanApr" type="number" min="0" max="100" step="any" value="6.5" /><span>%</span></div></div>
+            <div class="field"><label for="loanTerm">Term (years)</label><input id="loanTerm" type="number" min="0.1" max="100" step="any" value="30" /></div>
+          </div>
+          <div class="field">
+            <label for="loanExtra">Extra principal / month <span class="hint">optional</span></label>
+            <div class="prefixed"><span>$</span><input id="loanExtra" type="number" min="0" step="any" value="" /></div>
+          </div>
+        </section>
+        <div class="actions"><button id="loanRunBtn" class="primary" type="submit">Calculate</button></div>
+        <p id="loanMsg" class="formmsg" role="alert"></p>
+      </form>
+
+      <div class="panel results" id="loanResults">
+        <div class="result-head">
+          <div class="success-card good" id="loanPayCard">
+            <div class="success-big" id="loanPayment">—</div>
+            <div class="success-label">Monthly payment</div>
+          </div>
+          <div class="head-stats" id="loanStats"></div>
+        </div>
+        <section class="chart-card">
+          <div class="chart-head"><h3>Balance &amp; interest over time</h3></div>
+          <canvas id="loanCanvas" class="chart" height="320" aria-label="Loan balance over time"></canvas>
+          <div class="legend">
+            <span><i class="sw median"></i>Remaining balance</span>
+            <span><i class="sw worst"></i>Cumulative interest</span>
+          </div>
+        </section>
+        <section class="detail-card">
+          <h3>Yearly breakdown</h3>
+          <div id="loanSchedule" class="detail-grid"></div>
+        </section>
+        <p class="disclaimer">Estimate only — excludes taxes, insurance, PMI, and fees.</p>
+      </div>
+    </div>
+
+    <!-- ===================== COMPOUND INTEREST ===================== -->
+    <div id="viewCompound" class="layout" hidden>
+      <form id="compoundInputs" class="panel inputs" autocomplete="off" novalidate>
+        <section class="group">
+          <h2>Compound interest</h2>
+          <p class="hint">How a lump sum + regular additions grow over time.</p>
+          <div class="field">
+            <label for="compPrincipal">Current principal</label>
+            <div class="prefixed"><span>$</span><input id="compPrincipal" type="number" min="0" step="any" value="1500" /></div>
+          </div>
+          <div class="field">
+            <label for="compAddition">Annual addition <span class="hint">spread across compounding periods</span></label>
+            <div class="prefixed"><span>$</span><input id="compAddition" type="number" min="0" step="any" value="0" /></div>
+          </div>
+          <div class="row2">
+            <div class="field"><label for="compRate">Interest rate</label><div class="suffixed"><input id="compRate" type="number" min="0" max="100" step="any" value="5" /><span>%</span></div></div>
+            <div class="field"><label for="compYears">Years to grow</label><input id="compYears" type="number" min="1" max="200" step="1" value="5" /></div>
+          </div>
+          <div class="field">
+            <label for="compTimes">Compounds per year <span class="hint">1 = annually, 12 = monthly, 365 = daily</span></label>
+            <input id="compTimes" type="number" min="1" max="365" step="1" value="1" />
+          </div>
+          <div class="field">
+            <label>Make additions at the</label>
+            <div class="seg" id="compTiming" role="tablist">
+              <button type="button" data-timing="start" class="seg-on">Start</button>
+              <button type="button" data-timing="end">End</button>
+            </div>
+            <p class="hint">of each compounding period.</p>
+          </div>
+        </section>
+        <div class="actions"><button id="compRunBtn" class="primary" type="submit">Calculate</button></div>
+        <p id="compMsg" class="formmsg" role="alert"></p>
+      </form>
+
+      <div class="panel results" id="compResults">
+        <div class="result-head">
+          <div class="success-card good" id="compFvCard">
+            <div class="success-big" id="compFv">—</div>
+            <div class="success-label">Future value</div>
+          </div>
+          <div class="head-stats" id="compStats"></div>
+        </div>
+        <section class="chart-card">
+          <div class="chart-head"><h3>Growth over time</h3></div>
+          <canvas id="compCanvas" class="chart" height="320" aria-label="Balance growth over time"></canvas>
+          <div class="legend">
+            <span><i class="sw median"></i>Balance</span>
+            <span><i class="sw dead"></i>Total contributed</span>
+          </div>
+        </section>
+        <section class="detail-card">
+          <h3>Yearly breakdown</h3>
+          <div id="compSchedule" class="detail-grid"></div>
+        </section>
+        <p class="disclaimer">Nominal growth — inflation and taxes not applied.</p>
+      </div>
+    </div>
+  </main>
+
+  <!-- ============================== HELP ============================== -->
+  <div id="helpOverlay" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+      <div class="modal-head">
+        <h2 id="helpTitle">How WebSWR works</h2>
+        <button id="helpClose" class="ghost" type="button" aria-label="Close help">✕</button>
+      </div>
+      <div class="modal-body">
+        <p>WebSWR tests whether a retirement portfolio would have lasted, using real market history (1871–2025) and Monte&nbsp;Carlo simulation. Everything runs in your browser — no account, no server, no tracking.</p>
+
+        <h3>The basics</h3>
+        <ol>
+          <li>Enter your <strong>portfolio value</strong>, how many <strong>years</strong> it must last, and your <strong>asset mix</strong> (must total 100%).</li>
+          <li>Pick a <strong>spending strategy</strong> and amount.</li>
+          <li>Click <strong>Run simulation</strong>.</li>
+        </ol>
+        <p>The big number is your <strong>success rate</strong> — the share of historical retirements (or Monte&nbsp;Carlo trials) in which the money lasted the whole period. Green ≥ 95%, amber ≥ 75%, red below.</p>
+
+        <h3>Historical vs Monte Carlo</h3>
+        <ul>
+          <li><strong>Historical</strong> replays every actual sequence of returns since 1871 — a 30-year plan is tested starting in 1871, 1872, … 1996.</li>
+          <li><strong>Monte Carlo</strong> builds thousands of synthetic futures: <em>Bootstrap</em> draws random past years; <em>Block bootstrap</em> draws runs of consecutive years (keeps bad streaks intact); <em>Parametric</em> samples a normal distribution fit to history. Bootstrap is usually the toughest test.</li>
+        </ul>
+
+        <h3>Withdrawal strategies</h3>
+        <ul>
+          <li><strong>Constant dollar</strong> (the “4% rule”) — a fixed amount, raised each year for inflation.</li>
+          <li><strong>Percentage of portfolio</strong> — a fixed % of the current balance each year; it can never run dry, but your income swings with the market.</li>
+          <li><strong>CAPE-based</strong> (Big ERN) — a valuation-aware percentage: each year you withdraw <em>a + b × (1/CAPE)</em> of the balance, so the rate is <em>lower</em> when stocks are expensive (high CAPE) and higher when they're cheap. See below.</li>
+          <li><strong>Guyton-Klinger guardrails</strong> — constant-dollar with rules that trim spending after bad years and raise it after good ones.</li>
+          <li><strong>VPW</strong> (variable percentage) — intentionally spends the portfolio down to ~$0 by the end, like a self-managed annuity.</li>
+        </ul>
+
+        <h3>Real vs Nominal</h3>
+        <p>The balance chart can show <strong>today’s dollars (real)</strong> or face value (nominal). Real is the honest view — $1M in 50 years buys far less than today.</p>
+
+        <h3>CAPE-based withdrawals (Big ERN)</h3>
+        <p>The CAPE (cyclically-adjusted P/E, or “Shiller PE”) compares today’s price to the last 10&nbsp;years of real earnings — a rough gauge of how expensive stocks are. Big ERN’s dynamic rule sets each year’s withdrawal rate to <strong>a + b × (1/CAPE)</strong>, where 1/CAPE is the earnings yield. Defaults <strong>a = 1.75%</strong> and <strong>b = 0.5</strong> (his toolbox settings): at CAPE&nbsp;30 that’s 1.75% + 0.5×3.33% ≈ <strong>3.4%</strong>; at a cheap CAPE&nbsp;15 it rises to ≈&nbsp;5.1%. You spend less when valuations are stretched and more when they’re not, which historically avoids the worst sequence-of-returns busts.</p>
+        <p><strong>Historical backtests</strong> use each year’s <em>actual</em> Shiller CAPE as of the <em>start</em> of that year (January — the value a retiree could really have acted on; validated against multpl.com). <strong>Monte&nbsp;Carlo</strong> starts from the current CAPE and evolves it forward with the simulated returns. That’s why the “first year” of a historical run is a <em>range</em> — every start year had its own valuation — and won’t equal the today’s-CAPE readout under the inputs, which is what year 1 looks like if you retire <em>now</em>.</p>
+        <p><strong>The “better CAPE.”</strong> The headline CAPE runs permanently high partly because of buybacks and old tax rates. Following <a href="https://earlyretirementnow.com/2022/10/05/building-a-better-cape-ratio/" target="_blank" rel="noopener noreferrer">ERN’s “better CAPE”</a>, WebSWR’s current CAPE grosses recent earnings up by the retained-earnings yield and normalizes them to today’s corporate tax rate — a lower, fairer number that supports a slightly higher withdrawal rate today. It reproduces ERN’s published adjusted CAPE to within a fraction of a point.</p>
+        <p><strong>Kept current automatically.</strong> Nothing is fetched at runtime (that’s the whole security model). Instead, a daily server-side job re-runs the data pipeline and redeploys, so the shipped CAPE tracks the latest value on its own — there’s nothing to enter or update by hand.</p>
+
+        <h3>Find max spending</h3>
+        <p>Enter a target success rate and click the red button. WebSWR searches for the highest constant spending that still hits that target — against history or Monte&nbsp;Carlo. The answer appears under the button and is applied to your plan.</p>
+
+        <h3>Will your money outlast you?</h3>
+        <p>Set your age and sex, and the “Rich, broke, or dead?” chart layers SSA life-table survival odds onto your simulation: for each year it shows the chance you’re <strong>alive with money</strong>, <strong>alive but broke</strong>, or <strong>deceased</strong>. Often you’re far more likely to pass away with money left over than to run out of it.</p>
+
+        <h3>Loan calculator</h3>
+        <p>The <strong>Loan calc</strong> tab (top right) amortizes any fixed-rate loan — mortgage, car, student loan. It shows the monthly payment, total interest, payoff time, and how extra monthly principal shortens the loan and cuts interest.</p>
+
+        <h3>Compound interest</h3>
+        <p>The <strong>Compound</strong> tab grows a lump sum plus regular additions: pick the rate, how many times per year it compounds, and whether additions land at the <em>start</em> or <em>end</em> of each compounding period (the annual addition is spread evenly across those periods). You get the future value, total contributed vs. interest earned, and a year-by-year breakdown. Values are nominal — inflation and taxes are not applied.</p>
+
+        <h3>Income &amp; adjustments</h3>
+        <p>Add Social Security, pensions, or one-off expenses. <strong>Years count from retirement</strong> (year 1 = your first year retired). Tick <strong>COLA</strong> to grow an amount with inflation.</p>
+
+        <h3>Where the data comes from</h3>
+        <p>Annual total returns: <strong>1928–present</strong> from Aswath Damodaran (NYU Stern) with CPI-U inflation from the BLS; <strong>1871–1927</strong> reconstructed from Robert Shiller’s data (stocks, bonds, inflation only — an annual approximation). Gold, cash, corporate bonds, real estate and small-cap begin in 1928, so using them limits cycles to 1928+.</p>
+
+        <h3>Privacy &amp; safety</h3>
+        <p>No network requests, no cookies, no analytics — it works fully offline and your inputs never leave your browser. <strong>Copy link</strong> encodes your scenario into the URL so you can bookmark or share it; that link contains your numbers, so share it deliberately.</p>
+
+        <p class="modal-disclaimer">Educational tool — not financial advice. Past performance does not predict future results.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Classic scripts in dependency order (no ES modules => also works from file://). -->
+  <script src="js/market-data.js"></script>
+  <script src="js/cape-data.js"></script>
+  <script src="js/mortality-data.js"></script>
+  <script src="js/stats.js"></script>
+  <script src="js/core.js"></script>
+  <script src="js/montecarlo.js"></script>
+  <script src="js/mortality.js"></script>
+  <script src="js/amortize.js"></script>
+  <script src="js/compound.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/ui.js"></script>
+</body>
+</html>
