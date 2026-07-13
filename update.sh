@@ -19,9 +19,13 @@ cp Trimor/.dockerignore /home/jordanp123/webswr/   # glob above skips dotfiles
 
 # Refresh live data. Each exits non-zero if a validation guard trips, which
 # aborts the deploy -- the committed data already in the image keeps serving.
+# ORDER MATTERS: fetch_data first, because fetch_cape aligns its annual CAPE
+# series to market-data's year axis -- running it second means both files come
+# from the same morning's data (otherwise, each January the site would ship a
+# market file with one more year than the CAPE file).
 cd /home/jordanp123/webswr/tools
-python3 fetch_cape.py --refresh
 python3 fetch_data.py --refresh
+python3 fetch_cape.py --refresh
 
 cd /home/jordanp123/webswr
 chown -R 7001:7001 *

@@ -20,7 +20,7 @@ services:
       - /run:rw,noexec,nosuid,nodev,size=64M
       - /var/cache/nginx/:rw,noexec,nosuid,nodev,size=256M
     networks:
-      - web
+      - backend
   cloudflare_tunnel:
     user: 7000:7000
     container_name: cloudflared-tunnel-FBCC
@@ -41,6 +41,15 @@ services:
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN}
     networks:
-      web:
+      - backend
+      - egress
+# backend is internal-only: the nginx container can answer cloudflared but has
+# NO route to the internet at all (it's a static file server; zero egress
+# need). Only cloudflared can reach out, via egress, to the Cloudflare edge.
+# Renamed from "web" (not modified in place) because docker can't reconfigure
+# an existing network -- new names let the unattended `compose up -d` create
+# them cleanly; the orphaned "web" network is unused and pruned next run.
 networks:
-  web:
+  backend:
+    internal: true
+  egress:
