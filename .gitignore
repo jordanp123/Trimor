@@ -7,11 +7,9 @@
 # regenerate js/mortality-data.js (the generated file IS committed).
 tools/.cache/
 
-# Server-local secrets (tunnel token) -- never committed
-deploy/.env
-
-# Cron lock file created by deploy/update.sh's flock on the server
-.deploy.lock
+# Server-local secrets (cloudflare tunnel token, read by docker-compose.yaml
+# variable substitution) -- never committed
+.env
 
 # Scratch
 *.tmp

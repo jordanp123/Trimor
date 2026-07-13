@@ -1,0 +1,11 @@
+# Keep the build context to what the Dockerfile actually COPYs
+# (css/, js/, index.html, nginx.conf). On the server the context is the
+# assembled webroot, which also holds the tunnel token and the git checkout --
+# neither belongs anywhere near the docker daemon.
+.env
+.git
+Trimor
+data
+tools
+tests
+.DS_Store

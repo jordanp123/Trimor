@@ -119,7 +119,7 @@ renders bogus results. Run it with `sh tests/run.sh`.
 The app is safe opened directly, but when hosting it, also send these as **HTTP
 response headers** (a header CSP is stronger than the `<meta>` fallback, and
 `frame-ancestors` — the clickjacking protection — only works as a header).
-`deploy/nginx.conf` sets all of them at the origin, plus `Cache-Control:
+`nginx.conf` sets all of them at the origin, plus `Cache-Control:
 no-cache` (filenames aren't content-hashed and the CAPE data changes daily, so
 nothing may be cached as immutable):
 
