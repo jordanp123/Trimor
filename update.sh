@@ -30,10 +30,15 @@ chmod 600 .env
 chown jordanp123:jordanp123 update.sh docker-compose.yaml Dockerfile
 chown -R jordanp123:jordanp123 Trimor
 
-# Build while the old container serves, swap, then clean up. Never prune
-# before the new image exists: with no image on disk, a bad pull from Docker
-# Hub would leave nothing to fall back on and the site down.
-docker compose up -d --build
+# Refresh images and rebuild on the freshly-pulled base while the old
+# containers keep serving; a failed pull aborts here (set -e) with the
+# running site untouched. Without --pull the cached nginx/cloudflared bases
+# would never update again (no CVE fixes, and Cloudflare eventually drops
+# old cloudflared versions). Prune only after the new containers are up --
+# pruning first could leave zero images to fall back on.
+docker compose pull
+docker compose build --pull
+docker compose up -d
 docker system prune -f
 
 exit 0
