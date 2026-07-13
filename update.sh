@@ -39,7 +39,7 @@ chown -R jordanp123:jordanp123 Trimor
 docker compose pull
 docker compose build --pull
 docker compose up -d
-docker system prune -f
+docker system prune -f -a
 
 exit 0
 }
