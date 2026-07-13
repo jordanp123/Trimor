@@ -381,11 +381,16 @@
     const basis = solvePending ? solvePending.basis : "historical";
     solvePending = null;
     showProgress(false);
-    const spend = Math.round(max / 100) * 100;
-    const pctOfPort = (max / num("initialValue", 1) * 100).toFixed(2);
-    $("strategy").value = "constant"; syncStrategy();
+    // FLOOR to the $100 grid, never round: the bisection returns the highest
+    // VERIFIED-passing spending, and success only falls as spending rises --
+    // rounding up (even by $50) can tip a knife-edge cycle and re-run below
+    // the promised target. applyGsolve floors for the same reason.
+    const spend = Math.floor(max / 100) * 100;
+    const pctOfPort = (spend / num("initialValue", 1) * 100).toFixed(2);
+    $("strategy").value = "constant";
     $("initialSpend").value = spend;
     formatMoneyInput($("initialSpend"));
+    syncStrategy(); // after the writeback so the "Initial rate" hint shows the new value
     if (basis === "montecarlo") { $("runMonteCarlo").checked = true; toggleMcOptions(); }
     msg("", true);
     run(); // re-run with the solved spending (run() leaves the solver result box alone)

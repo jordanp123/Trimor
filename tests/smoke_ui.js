@@ -42,6 +42,21 @@ A(/%$/.test(document.getElementById("successBig").textContent), "results still r
 A(document.getElementById("solveResult").hidden === false &&
   document.getElementById("solveResult").children.length > 0, "solver result box is shown with content");
 
+// Regression: the solve writeback must FLOOR to the $100 grid, never round to
+// nearest. The bisection returns the highest VERIFIED-passing spending; success
+// only falls as spending rises, so rounding UP can tip a knife-edge cycle and
+// re-run below the promised target (seen in prod: "100%" solve re-ran at 98.1%).
+// Stub the solver so the raw answer sits in the round-up half of its bracket.
+var _realSolve = SWR.core.solveSpending;
+SWR.core.solveSpending = function () { return 55555.55; };
+fire(basisBtns[0], "click"); // back to Historical basis -> inline solve path
+fire(document.getElementById("solveBtn"), "click");
+A(document.getElementById("initialSpend").value === "55,500",
+  "solve writeback floors, never rounds up (" + document.getElementById("initialSpend").value + ")");
+A(document.getElementById("spendRateHint").textContent.indexOf("5.55") >= 0,
+  "Initial-rate hint refreshed to the written-back value (" + document.getElementById("spendRateHint").textContent + ")");
+SWR.core.solveSpending = _realSolve;
+
 // Integration: percent-of-portfolio guardrail solver. Set a ceiling, leave the
 // floor blank, then solve the floor (historical basis => inline path in this shim).
 document.getElementById("strategy").value = "percent";
