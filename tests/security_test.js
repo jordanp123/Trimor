@@ -9,6 +9,19 @@ var adjRows = document.getElementById("adjustRows").children.length;
 A(incRows <= 51, "income rows capped despite 100k in hash (got " + incRows + ")");
 A(adjRows <= 51, "adjustment rows capped despite 100k in hash (got " + adjRows + ")");
 
+// A share-link seed must override init()'s load-time randomization (the random
+// seed is written BEFORE loadHash), or shared links stop replaying exactly.
+A(document.getElementById("mcSeed").value === "424242",
+  "hash-restored MC seed survives load-time randomization (got " + document.getElementById("mcSeed").value + ")");
+
+// The monthly-payout flag must round-trip through the share hash and be
+// reflected onto the segmented control (hidden input + seg-on button state).
+A(document.getElementById("withdrawFreqVal").value === "monthly",
+  "hash-restored withdrawal frequency = monthly (got " + document.getElementById("withdrawFreqVal").value + ")");
+var _freqBtns = document.getElementById("withdrawFreq").querySelectorAll("button");
+A(_freqBtns[1].classList.contains("seg-on") && !_freqBtns[0].classList.contains("seg-on"),
+  "restored frequency reflected onto the seg control (Monthly active)");
+
 // years=1e9 / portfolio=Infinity must fail validation, so no simulation ran.
 A(document.getElementById("formMsg").textContent.length > 0, "hostile numbers rejected by validate() (no compute)");
 A(!/%/.test(document.getElementById("successBig").textContent), "no bogus results rendered from hostile input");

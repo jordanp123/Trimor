@@ -6,6 +6,8 @@ this.__SWR_TEST_HASH = "#" + JSON.stringify({
   initialValue: "1e400",       // parses to Infinity -> must be rejected
   initialSpend: "1e308",       // must be clamped (buildParams), not just rejected
   mcTrials: "999999999",       // must be capped
+  mcSeed: "424242",            // must SURVIVE init()'s seed randomization (share links replay exactly)
+  withdrawFreqVal: "monthly",  // percentage monthly-payout flag must round-trip through the hash
   runMonteCarlo: 0,
   inc: new Array(100000).fill([1e308, 1, 50, 1]),    // must NOT spawn 100k rows; amounts must be clamped
   adj: new Array(100000).fill([0, 1e308, 1, 50, 1]),

@@ -29,10 +29,16 @@ ivEl.value = "2500000"; fire(ivEl, "input");
 A(ivEl.value === "2,500,000", "typing reformats with commas (" + ivEl.value + ")");
 ivEl.value = "1000000"; fire(ivEl, "input"); // restore the default for the sections below
 
+// The MC seed field starts blank in the HTML; init() must fill it with a
+// fresh 6-digit seed each load (users overwrite it to replay a past run).
+A(/^[1-9]\d{5}$/.test(document.getElementById("mcSeed").value),
+  "MC seed randomized on load (" + document.getElementById("mcSeed").value + ")");
+
 var spendBefore = document.getElementById("initialSpend").value;
 var basisBtns = document.getElementById("solveBasis").querySelectorAll("button");
 fire(basisBtns[1], "click");                       // select "Monte Carlo" basis
 document.getElementById("targetSuccess").value = "90";
+document.getElementById("mcSeed").value = "12345"; // pin the now-random seed so this section stays deterministic
 fire(document.getElementById("solveBtn"), "click"); // click "Find max spending for"
 var spendAfter = document.getElementById("initialSpend").value;
 A(spendAfter !== spendBefore && unc(spendAfter) > 25000 && unc(spendAfter) < 70000,
@@ -69,6 +75,24 @@ A(solvedFloor !== "" && unc(solvedFloor) > 0 && unc(solvedFloor) <= 60000,
 A(document.getElementById("gsolveResult").hidden === false &&
   document.getElementById("gsolveResult").children.length > 0, "guardrail result box shown with content");
 A(document.getElementById("strategy").value === "percent", "guardrail solve kept the percentage strategy");
+
+// Integration: monthly withdrawal frequency (percentage strategy only). The
+// segmented control is wired, selecting Monthly updates the persisted hidden
+// value + hint, and a run still renders results.
+document.getElementById("strategy").value = "percent";
+fire(document.getElementById("strategy"), "change"); // syncStrategy reveals the percentage fields
+var freqBtns = document.getElementById("withdrawFreq").querySelectorAll("button");
+A(freqBtns.length === 2, "withdrawFreq exposes Annual/Monthly buttons");
+A(document.getElementById("withdrawFreqVal").value === "annual", "frequency defaults to Annual");
+fire(freqBtns[1], "click"); // Monthly
+A(document.getElementById("withdrawFreqVal").value === "monthly", "clicking Monthly sets the persisted freq value");
+A(document.getElementById("withdrawFreqHint").textContent.indexOf("T-bill") >= 0,
+  "monthly hint mentions the T-bill cash bucket");
+document.getElementById("spendFloor").value = ""; document.getElementById("spendCeiling").value = "";
+fire(document.getElementById("inputs"), "submit");
+A(/%$/.test(document.getElementById("successBig").textContent), "monthly percentage run renders a success %");
+fire(freqBtns[0], "click"); // back to Annual
+A(document.getElementById("withdrawFreqVal").value === "annual", "clicking Annual restores the annual value");
 
 // Integration: CAPE-based (Big ERN) strategy uses the shipped, auto-updated CAPE
 // (no user input); switching to it and re-running renders results off the rule.

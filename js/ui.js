@@ -15,7 +15,7 @@
   const PERSIST = [
     "initialValue", "years", "feeRate", "currentAge", "sex",
     "allocStocks", "allocBonds", "allocGold", "allocCash", "allocCorp", "allocReit", "allocSmallcap",
-    "strategy", "initialSpend", "spendPercent", "vpwReturn", "capeA", "capeB", "gkGuard", "gkAdjust",
+    "strategy", "initialSpend", "spendPercent", "withdrawFreqVal", "vpwReturn", "capeA", "capeB", "gkGuard", "gkAdjust",
     "spendFloor", "spendCeiling", "inflationMode", "fixedInflation", "taxRate",
     "runMonteCarlo", "mcMethod", "mcTrials", "mcBlock", "mcSeed", "targetSuccess",
     "gsolveTarget",
@@ -145,6 +145,8 @@
     };
     const fl = parseFloat(stripNum($("spendFloor").value)); if (isFinite(fl)) sp.floor = fl;
     const cl = parseFloat(stripNum($("spendCeiling").value)); if (isFinite(cl)) sp.ceiling = cl;
+    // Monthly payout (T-bill cash bucket) is a percentage-strategy-only option.
+    if (strategy === "percent" && $("withdrawFreqVal").value === "monthly") sp.monthly = true;
     return {
       initialValue: num("initialValue", 0),
       // Clamp to the dataset length so N can never blow up array allocations,
@@ -265,6 +267,16 @@
     $("spendRateHint").textContent =
       (st === "constant" || st === "guyton") && iv > 0 ? "Initial rate: " + (s / iv * 100).toFixed(2) + "% of portfolio" : "";
     updateCapeHint();
+  }
+  // Reflect the persisted withdrawFreqVal into the segmented buttons + hint (the
+  // hidden input is the single source of truth so it round-trips in the hash).
+  function syncFreq() {
+    const v = $("withdrawFreqVal").value === "monthly" ? "monthly" : "annual";
+    $("withdrawFreq").querySelectorAll("button").forEach((b) =>
+      b.classList.toggle("seg-on", b.dataset.freq === v));
+    $("withdrawFreqHint").textContent = v === "monthly"
+      ? "Each January the year's withdrawal moves into a risk-free 3-month T-bill account and is drawn down monthly, earning a little interest along the way — no market risk on money you're about to spend."
+      : "The whole year's withdrawal is taken up front each January.";
   }
   function updateAllocSum() {
     const s = allocSum(), e = $("allocSum");
@@ -844,6 +856,8 @@
     $("sex").addEventListener("change", reRbd);
     $("addIncome").addEventListener("click", () => addFlowRow($("incomeRows"), false, {}));
     $("addAdjust").addEventListener("click", () => addFlowRow($("adjustRows"), true, {}));
+    $("withdrawFreq").querySelectorAll("button").forEach((b) =>
+      b.addEventListener("click", () => { $("withdrawFreqVal").value = b.dataset.freq; syncFreq(); }));
     $("solveBtn").addEventListener("click", solve);
     $("gsolveBtn").addEventListener("click", gsolve);
     $("gsolveBasis").querySelectorAll("button").forEach((b) =>
@@ -898,9 +912,14 @@
     if (!t) t = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
     document.documentElement.setAttribute("data-theme", t);
     wire();
+    // Fresh Monte Carlo seed on every page load (6 digits, human-copyable).
+    // Must run BEFORE loadHash(): share links carry mcSeed, so a restored link
+    // reproduces its exact run. The user can also type a seed of their own --
+    // nothing touches this field again until the next reload.
+    $("mcSeed").value = String(100000 + Math.floor(Math.random() * 900000));
     loadHash();
     MONEY_IDS.forEach((id) => formatMoneyInput($(id))); // defaults + hash values get commas
-    syncStrategy(); updateAllocSum(); toggleFixed(); toggleMcOptions(); toggleMcBlock();
+    syncStrategy(); syncFreq(); updateAllocSum(); toggleFixed(); toggleMcOptions(); toggleMcBlock();
     run();
   }
 

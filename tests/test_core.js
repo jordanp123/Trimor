@@ -143,6 +143,64 @@ if (self.SWR.mc) {
   }
 })();
 
+// 6b) Monthly withdrawal option (T-bill cash bucket), percentage strategy only.
+(function () {
+  // (a) The closed-form bucket interest matches a literal 12-step drawdown, and
+  // a 0% (pre-1928) rate yields exactly 0 interest.
+  function refBucket(spend, rf) {
+    var m = Math.pow(1 + rf, 1 / 12) - 1, B = spend;
+    for (var k = 0; k < 12; k++) { B -= spend / 12; B *= (1 + m); } // start-of-month draw, then grow
+    return B;
+  }
+  assert(core.bucketInterest(50000, 0) === 0, "bucketInterest: 0% rate => 0 interest");
+  assert(core.bucketInterest(0, 0.05) === 0, "bucketInterest: $0 spend => 0 interest");
+  [0.01, 0.05, 0.1404].forEach(function (rf) {
+    assert(near(core.bucketInterest(50000, rf), refBucket(50000, rf), 1e-6),
+      "bucketInterest closed form == 12-step loop (rf=" + (rf * 100).toFixed(2) + "%)");
+  });
+  assert(core.bucketInterest(50000, 0.05) > 0 && core.bucketInterest(50000, 0.05) < 50000 * 0.05,
+    "bucketInterest is positive but < a full year at the rate (drained over the year)");
+
+  // (b) With a 0% T-bill series, monthly mode is byte-identical to annual (the
+  // annual path must be untouched by this feature).
+  var dataNoCash = Object.assign({}, data, { cash: data.years.map(function () { return 0; }) });
+  var aZero = core.runHistorical(P({ spending: { strategy: "percent", percent: 0.04 } }), dataNoCash);
+  var mZero = core.runHistorical(P({ spending: { strategy: "percent", percent: 0.04, monthly: true } }), dataNoCash);
+  assert(mZero.endingReal.median === aZero.endingReal.median &&
+         mZero.endingReal.mean === aZero.endingReal.mean &&
+         mZero.successRate === aZero.successRate,
+    "monthly @0% T-bill is identical to annual");
+
+  // (c) With the real (positive) T-bill history, monthly ends strictly ahead --
+  // the spending bucket earns risk-free interest the annual lump never did.
+  var aReal = core.runHistorical(P({ spending: { strategy: "percent", percent: 0.045 } }), data);
+  var mReal = core.runHistorical(P({ spending: { strategy: "percent", percent: 0.045, monthly: true } }), data);
+  console.log("percent 4.5% monthly vs annual: meanRealEnd $" + Math.round(aReal.endingReal.mean) +
+    " -> $" + Math.round(mReal.endingReal.mean));
+  assert(mReal.endingReal.mean > aReal.endingReal.mean, "monthly ending > annual (T-bill tailwind)");
+  assert(mReal.successRate >= aReal.successRate, "monthly success >= annual (never worse)");
+
+  // (d) The guardrail solver still meets its target with monthly mode on
+  // (monotonicity preserved: net draw = spend - interest, still rising in spend).
+  var gM = core.solveGuardrail(P({ spending: { strategy: "percent", percent: 0.03, ceiling: 60000, monthly: true } }),
+    data, { solveFor: "floor", target: 0.95 });
+  assert(gM.feasible, "guardrail floor solve works with monthly mode on");
+  var atGM = core.runHistorical(P({ spending: { strategy: "percent", percent: 0.03, ceiling: 60000, floor: gM.value, monthly: true } }), data).successRate;
+  assert(atGM >= 0.95 - 1e-9, "monthly guardrail solve meets its 95% target (" + (atGM * 100).toFixed(1) + "%)");
+
+  // (e) Monte Carlo carries the T-bill rate: deterministic with a fixed seed, and
+  // (same seed => identical return/inflation draws) monthly ends ahead of annual.
+  if (self.SWR.mc) {
+    var mcA = self.SWR.mc.run(P({ spending: { strategy: "percent", percent: 0.045 } }), data, { method: "bootstrap", trials: 2000, seed: 5 });
+    var mcM = self.SWR.mc.run(P({ spending: { strategy: "percent", percent: 0.045, monthly: true } }), data, { method: "bootstrap", trials: 2000, seed: 5 });
+    var mcM2 = self.SWR.mc.run(P({ spending: { strategy: "percent", percent: 0.045, monthly: true } }), data, { method: "bootstrap", trials: 2000, seed: 5 });
+    assert(mcM.endingReal.mean === mcM2.endingReal.mean, "MC monthly deterministic with a fixed seed");
+    assert(mcM.endingReal.mean > mcA.endingReal.mean, "MC monthly ending > annual (same draws + T-bill interest)");
+    var mcP = self.SWR.mc.run(P({ spending: { strategy: "percent", percent: 0.045, monthly: true } }), data, { method: "parametric", trials: 1000, seed: 3 });
+    assert(mcP.successRate >= 0 && mcP.successRate <= 1, "MC parametric monthly runs (mean-rate bucket)");
+  }
+})();
+
 // 7) Social Security inflow lifts success vs. none.
 var rss = H({
   spending: { strategy: "constant", initial: 60000 },

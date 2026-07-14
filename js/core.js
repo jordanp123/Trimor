@@ -81,6 +81,19 @@
     return x;
   }
 
+  // Monthly-withdrawal mode (percentage strategy only): the year's spending is
+  // parked in a risk-free 3-month T-bill account each January and drawn down in
+  // 12 equal monthly installments (withdrawn at the START of each month), so it
+  // earns a little interest instead of nothing. Returns the accrued interest --
+  // the account's leftover after 12 draws -- as a closed form of that drawdown
+  // (no monthly loop). `rf` is the year's annual T-bill rate; 0 (or null, pre-
+  // 1928 when T-bills didn't exist) yields exactly 0 interest.
+  function bucketInterest(spend, rf) {
+    if (!(rf > 0) || !(spend > 0)) return 0;
+    const m = Math.pow(1 + rf, 1 / 12) - 1; // equivalent monthly rate
+    return spend * (1 + rf) - (spend / 12) * (1 + m) * (rf / m);
+  }
+
   /*
    * Simulate ONE cycle. `ret` is {asset:[N]} nominal returns, `infl` is [N].
    * Returns { series:[N+1], endValue, endValueReal, success, failedYear,
@@ -93,6 +106,10 @@
     const feeRate = p.feeRate || 0;
     const taxRate = p.taxRate || 0;
     const initRate = p.initialValue > 0 ? sp.initial / p.initialValue : 0;
+    // Monthly percentage mode: ret.__tbill carries this cycle's T-bill rate per
+    // year (null pre-1928). Off for every other strategy and for annual mode.
+    const monthly = sp.strategy === "percent" && !!sp.monthly;
+    const tbill = ret.__tbill || null;
 
     let port = p.initialValue;
     let cumInfl = 1; // cumulative inflation at the START of the current year
@@ -206,6 +223,10 @@
 
       // 3) Grow the surviving balance, advance inflation.
       port *= 1 + r;
+      // Monthly mode: credit the risk-free interest the year's spending earned
+      // while sitting in the T-bill bucket. `spend` is the amount deposited in
+      // January; it never carried market risk, so it's added after growth.
+      if (monthly) port += bucketInterest(spend, tbill ? tbill[i] : 0);
       series[i + 1] = port;
       cumInfl *= 1 + infl[i];
       realSeries[i + 1] = port / cumInfl; // cumInfl now covers years 0..i
@@ -468,6 +489,11 @@
       }
       const infl = data.inflation.slice(off, off + N);
       const capeSlice = p.spending.strategy === "cape" && data.cape ? data.cape.slice(off, off + N) : null;
+      // Monthly percentage mode needs the year's T-bill rate for the cash bucket,
+      // regardless of whether cash is in the allocation.
+      if (p.spending.strategy === "percent" && p.spending.monthly && data.cash) {
+        ret.__tbill = data.cash.slice(off, off + N);
+      }
       const res = simulateCycle(p, ret, infl, capeSlice);
       res.startYear = s;
       cycles.push(res);
@@ -570,5 +596,6 @@
   SWR.core = {
     ASSETS, weightedReturn, simulateCycle, summarize, runHistorical,
     solveSpending, solveGuardrail, histogram, histogramLog, validStartOffset, capeRate,
+    bucketInterest,
   };
 })(typeof self !== "undefined" ? self : this);

@@ -18,6 +18,7 @@ var SEG = {
   gsolveBasis: ["basis", "historical", "montecarlo"],
   viewTabs: ["view", "main", "loan", "compound"],
   compTiming: ["timing", "start", "end"],
+  withdrawFreq: ["freq", "annual", "monthly"],
 };
 
 function classListFor() {
@@ -98,14 +99,15 @@ var DEFAULTS = {
   taxRate: { type: "number", value: "0" },
   runMonteCarlo: { type: "checkbox", checked: true }, // forced on to exercise the MC path
   mcMethod: { type: "select-one", value: "bootstrap" }, mcTrials: { type: "number", value: "2000" },
-  mcBlock: { type: "number", value: "5" }, mcSeed: { type: "number", value: "12345" },
+  mcBlock: { type: "number", value: "5" }, mcSeed: { type: "number", value: "" }, // seed is blank in HTML; init() randomizes it
   targetSuccess: { type: "number", value: "100" }, gsolveTarget: { type: "number", value: "95" },
+  withdrawFreqVal: { type: "hidden", value: "annual" }, // percentage monthly-payout toggle (hidden input backs the seg control)
 };
 // Non-input element ids that exist in index.html.
 var KNOWN = {};
 ["themeBtn", "helpBtn", "helpOverlay", "helpClose", "helpTitle", "inputs", "allocSum", "spendRateHint", "fixedInflationWrap", "incomeRows", "addIncome",
  "adjustRows", "addAdjust", "mcOptions", "mcBlockWrap", "runBtn", "solveBtn", "shareBtn",
- "capeRateNow",
+ "capeRateNow", "withdrawFreq", "withdrawFreqHint",
  "resetBtn", "solveBasis", "solveResult", "gsolveBtn", "gsolveBasis", "gsolveResult", "formMsg", "results", "successCard", "successBig", "successLabel", "headStats",
  "progressWrap", "progressBar", "progressLabel", "trajMode", "dollarMode", "trajUnit", "trajCanvas", "histCanvas",
  "rbdCard", "rbdCanvas", "rbdSub", "detailBody",
