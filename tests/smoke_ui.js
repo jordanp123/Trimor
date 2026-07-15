@@ -165,6 +165,26 @@ A(rtxt.indexOf("abcdefghijklmnopqrstuvwxy") < 0, "note truncated to 24 chars in 
 A(rtxt.indexOf("Success rate") >= 0 && rtxt.indexOf("%") >= 0, "report carries the results stats");
 A(rtxt.indexOf("$12,000/yr") >= 0, "report shows the income amount");
 A(rpt.querySelectorAll("img").length >= 2, "report embeds chart snapshots (" + rpt.querySelectorAll("img").length + ")");
+A(rpt.querySelectorAll(".rpt-qr").length === 1, "report embeds the share-link QR figure");
+// When the payload exceeds QR capacity, dataURL returns null and the report
+// must still build with the text fallback and no QR figure.
+var _realQR = SWR.qr.dataURL;
+SWR.qr.dataURL = function () { return null; };
+fire(document.getElementById("printBtn"), "click");
+A(rpt.querySelectorAll(".rpt-qr").length === 0 && textOf(rpt).indexOf("are listed above") >= 0,
+  "over-capacity URL: report still builds, QR absent, text fallback present");
+SWR.qr.dataURL = _realQR;
+
+// Slim share-hash: fields still at their load-time defaults are omitted (the
+// hash was just refreshed by the report build above -- shim atob is identity,
+// so the payload is inspectable). mcSeed must ALWAYS survive; touched fields
+// (strategy, targetSuccess, the income row) must be present.
+var slim = decodeURIComponent(history._last.slice(1));
+A(slim.indexOf("mcSeed") >= 0, "slim hash always carries mcSeed");
+A(slim.indexOf("strategy") >= 0 && slim.indexOf("targetSuccess") >= 0 && slim.indexOf("inc") >= 0,
+  "slim hash carries the touched fields + flows");
+A(slim.indexOf("vpwReturn") < 0 && slim.indexOf("gkGuard") < 0 && slim.indexOf("allocGold") < 0 && slim.indexOf("adj") < 0,
+  "slim hash omits untouched fields and empty flow lists");
 
 // Chart hover redraw paths must run without throwing (measureText/draw stubbed).
 ["histCanvas", "rbdCanvas"].forEach(function (id) {

@@ -415,5 +415,73 @@ if (self.SWR.compound) {
     "hostile inputs clamped (years=" + cH.years + ", times=" + cH.times + ", fv finite=" + isFinite(cH.fv) + ")");
 }
 
+// 18) QR encoder (report share-link QR). The encoder is pure math, so most of
+// its correctness is pinned by invariants + published spec anchors; the final
+// authority is the real scan-back check done at review time (Vision framework
+// decoding an actual rendered PNG).
+if (self.SWR.qr) {
+  var qr = self.SWR.qr, qi = qr._internals;
+
+  // Geometry <-> spec-table cross-check across ALL 40 versions: leftover bits
+  // after whole codewords must equal the spec's per-version remainder bits.
+  assert(qi.selfCheck() === "", "QR geometry/table self-check clean (" + (qi.selfCheck() || "ok") + ")");
+  // Famous capacity anchors: v1 = 26 total codewords (19 data at L, 16 at M);
+  // v40 = 3706 total, 2956 data at L => the published 2,953-byte limit.
+  assert(qi.totalCodewords(1) === 26 && qi.dataCodewords(1, "L") === 19 && qi.dataCodewords(1, "M") === 16,
+    "v1 codeword counts match the spec (26/19/16)");
+  assert(qi.totalCodewords(40) === 3706 && qi.dataCodewords(40, "L") === 2956,
+    "v40 codeword counts match the spec (3706/2956)");
+  assert(qi.pickVersion(2953) && qi.pickVersion(2953).version === 40 && qi.pickVersion(2954) === null,
+    "byte capacity edge: 2953 fits v40, 2954 does not");
+
+  // Published BCH anchors: format info for M/mask0 and L/mask0, version info 7.
+  assert(qi.formatInfo("M", 0) === 0x5412, "format info M-0 = 0x5412 (spec anchor)");
+  assert(qi.formatInfo("L", 0) === 0x77c4, "format info L-0 = 0x77C4 (spec anchor)");
+  assert(qi.versionInfo(7) === 0x07c94, "version info v7 = 0x07C94 (spec anchor)");
+
+  // Reed-Solomon: the published 1-M tutorial vector, then the divisibility
+  // invariant (data||EC evaluates to 0 at every generator root a^0..a^(n-1)).
+  var rsData = [32, 91, 11, 120, 209, 114, 220, 77, 67, 64, 236, 17, 236, 17, 236, 17];
+  var rsWant = [196, 35, 39, 119, 235, 215, 231, 226, 93, 23];
+  assert(qi.rsEC(rsData, 10).join(",") === rsWant.join(","), "RS EC matches the published 1-M vector");
+  function polyEvalsToZeroAtRoots(cw, nEC) {
+    for (var e = 0; e < nEC; e++) {
+      var x = qi.EXP[e], acc = 0;
+      for (var k = 0; k < cw.length; k++) acc = qi.gfMul(acc, x) ^ cw[k];
+      if (acc !== 0) return false;
+    }
+    return true;
+  }
+  var okRoots = true;
+  [[1, "M"], [5, "L"], [12, "M"], [27, "L"]].forEach(function (ve) {
+    var v = ve[0], ec = ve[1];
+    var payload = [];
+    for (var k = 0; k < qi.dataCodewords(v, ec) - 3; k++) payload.push((k * 37 + v) & 0xff);
+    // Rebuild one block's data+EC and verify the root property directly.
+    var blockData = payload.slice(0, 10);
+    var ecw = qi.rsEC(blockData, 16);
+    if (!polyEvalsToZeroAtRoots(blockData.concat(ecw), 16)) okRoots = false;
+  });
+  assert(okRoots, "RS codewords vanish at all generator roots (divisibility invariant)");
+
+  // Structural checks on a real encode (typical share-link scale).
+  var urlish = "https://rosesolutions.work/webswr/#" + new Array(700).join("A");
+  var q1 = qr.encode(urlish);
+  assert(q1 && q1.size === 17 + 4 * q1.version, "matrix size = 17+4v (v" + q1.version + ", " + q1.size + "px)");
+  function finderAt(m, r0, c0) {
+    return m[r0][c0] === 1 && m[r0 + 1][c0 + 1] === 0 && m[r0 + 3][c0 + 3] === 1 && m[r0 + 6][c0 + 6] === 1;
+  }
+  assert(finderAt(q1.mat, 0, 0) && finderAt(q1.mat, 0, q1.size - 7) && finderAt(q1.mat, q1.size - 7, 0),
+    "finder patterns at three corners");
+  var timingOK = true;
+  for (var tc = 8; tc < q1.size - 8; tc++) if (q1.mat[6][tc] !== (tc % 2 === 0 ? 1 : 0)) timingOK = false;
+  assert(timingOK, "timing row alternates dark/light");
+  assert(q1.mat[4 * q1.version + 9][8] === 1, "dark module present");
+  var q2 = qr.encode(urlish);
+  assert(JSON.stringify(q1.mat) === JSON.stringify(q2.mat), "encoding is deterministic");
+  assert(qr.encode("A").version === 1, "1-byte payload uses version 1");
+  assert(qr.encode(new Array(3002).join("x")) === null, "payload beyond v40 capacity returns null (QR skipped)");
+}
+
 console.log("\nRESULT: " + pass + " passed, " + fail + " failed");
 if (fail > 0) throw new Error(fail + " test(s) failed");

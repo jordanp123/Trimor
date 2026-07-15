@@ -211,7 +211,7 @@
     const colaBox = el("input", { class: "f-cola", type: "checkbox" });
     colaBox.checked = v.cola !== false;
     const cola = el("label", { class: "col-cola", title: "Adjust for inflation" }, [colaBox]);
-    const note = el("input", { class: "f-note", type: "text", autocomplete: "off", placeholder: "note", title: "Short label for this row (shows in the printed report)" });
+    const note = el("input", { class: "f-note", type: "text", autocomplete: "off", title: "Short label for this row (shows in the printed report)" });
     note.maxLength = MAX_NOTE;
     if (v.note) note.value = String(v.note).slice(0, MAX_NOTE);
     const rm = el("button", { class: "ghost rm", type: "button", text: "×", title: "Remove" });
@@ -230,7 +230,7 @@
   // A one-time column header above the rows so "1" / "45" read as start/end year.
   function ensureFlowHeader(container, kindSelectable) {
     if (container.querySelector(".flowhead")) return;
-    const labels = (kindSelectable ? ["Type"] : ["Source"]).concat(["Amount / yr", "Start yr", "End yr", "COLA", "Note", ""]);
+    const labels = (kindSelectable ? ["Type"] : ["Source"]).concat(["$ / yr", "Start", "End", "COLA", "Note", ""]);
     const h = el("div", { class: "flowhead" });
     labels.forEach((t, i) => {
       const span = el("span", { class: "fh", text: t });
@@ -803,12 +803,30 @@
   }
 
   // ---------- shareable URL state ----------
+  // Snapshot of every PERSIST field's pristine load-time value, taken in init()
+  // BEFORE the seed randomization and loadHash(). gather() omits fields still
+  // at these defaults, roughly halving share links (and the report's QR code
+  // density): applyState only sets ids present in the hash, and a fresh load
+  // starts from exactly these defaults, so omitted === restored-to-default.
+  const DEFAULT_STATE = {};
+  const persistVal = (e) => (e.type === "checkbox" ? (e.checked ? 1 : 0) : stripNum(e.value));
+  function snapshotDefaults() {
+    PERSIST.forEach((id) => { const e = $(id); if (e) DEFAULT_STATE[id] = persistVal(e); });
+  }
   function gather() {
     const o = {};
-    // stripNum: share-links carry plain digits, not display commas.
-    PERSIST.forEach((id) => { const e = $(id); if (!e) return; o[id] = e.type === "checkbox" ? (e.checked ? 1 : 0) : stripNum(e.value); });
-    o.inc = readFlows("incomeRows", "income").map((f) => [f.amount, f.start, f.end, f.cola ? 1 : 0, f.note || ""]);
-    o.adj = readFlows("adjustRows", null).map((f) => [f.kind === "income" ? 1 : 0, f.amount, f.start, f.end, f.cola ? 1 : 0, f.note || ""]);
+    PERSIST.forEach((id) => {
+      const e = $(id); if (!e) return;
+      const v = persistVal(e); // stripNum: share-links carry plain digits, not display commas
+      // mcSeed is ALWAYS serialized: its "default" is randomized per load, so
+      // omitting it would re-roll the seed on open and change the MC results.
+      if (id !== "mcSeed" && v === DEFAULT_STATE[id]) return;
+      o[id] = v;
+    });
+    const inc = readFlows("incomeRows", "income").map((f) => [f.amount, f.start, f.end, f.cola ? 1 : 0, f.note || ""]);
+    const adj = readFlows("adjustRows", null).map((f) => [f.kind === "income" ? 1 : 0, f.amount, f.start, f.end, f.cola ? 1 : 0, f.note || ""]);
+    if (inc.length) o.inc = inc; // empty = fresh-load state; omit like defaults
+    if (adj.length) o.adj = adj;
     return o;
   }
   function updateHash() {
@@ -957,9 +975,21 @@
       rpt.appendChild(fig);
     });
 
-    const foot = rptSection("Reproduce this simulation");
+    const foot = rptSection("About this report");
+    // The share URL itself is useless on paper (hundreds of characters), so it
+    // ships as a QR code instead: scan to reopen this exact simulation. The
+    // encoder treats the URL as opaque bytes (write-only; no parsing, no DOM
+    // sinks) and gives up gracefully (null) past QR capacity -- the text
+    // fallback below always states that the inputs are reproducible by hand.
     updateHash();
-    foot.appendChild(el("p", { class: "rpt-url", text: location.href }));
+    const qrURI = SWR.qr ? SWR.qr.dataURL(location.href, 4) : null;
+    if (qrURI) {
+      const qfig = el("figure", { class: "rpt-qr" });
+      qfig.appendChild(el("img", { src: qrURI, alt: "QR code of the share link for this simulation" }));
+      qfig.appendChild(el("figcaption", { text: "Scan to reopen this simulation with every input restored." }));
+      foot.appendChild(qfig);
+    }
+    foot.appendChild(el("p", { class: "rpt-vintage", text: "All inputs needed to reproduce this simulation, including the Monte Carlo seed, are listed above." }));
     let vintage = "Market data " + DATA.meta.firstYear + "–" + DATA.meta.lastYear + ", generated " + DATA.meta.generated;
     if (CAPE && CAPE.latest) vintage += " · CAPE as of " + CAPE.latest.date;
     foot.appendChild(el("p", { class: "rpt-vintage", text: vintage }));
@@ -1059,6 +1089,9 @@
     if (!t) t = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
     document.documentElement.setAttribute("data-theme", t);
     wire();
+    // Capture the pristine defaults FIRST -- before the random seed below and
+    // before loadHash() -- so gather() can omit untouched fields (see above).
+    snapshotDefaults();
     // Fresh Monte Carlo seed on every page load (6 digits, human-copyable).
     // Must run BEFORE loadHash(): share links carry mcSeed, so a restored link
     // reproduces its exact run. The user can also type a seed of their own --

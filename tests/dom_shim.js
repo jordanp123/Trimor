@@ -186,7 +186,7 @@ function btoa(s) { return s; }
 function atob(s) { return s; }
 var navigator = {};
 var location = { hash: self.__SWR_TEST_HASH || "", pathname: "/index.html", href: "http://localhost/", reload: function () {} };
-var history = { replaceState: function () {} };
+var history = { _last: "", replaceState: function (s, t, url) { history._last = url || ""; } };
 var localStorage = { getItem: function () { return null; }, setItem: function () {} };
 // Shadow jsc's native stdout print(): window.print() must be a no-op here,
 // and the smoke test asserts the report path actually invoked it.

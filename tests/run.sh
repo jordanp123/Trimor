@@ -18,26 +18,26 @@ runbundle() {
 
 runbundle "engine + Monte Carlo" \
   "$DIR/tests/_shim.js" "$DIR/js/market-data.js" "$DIR/js/cape-data.js" "$DIR/js/mortality-data.js" "$DIR/js/stats.js" \
-  "$DIR/js/core.js" "$DIR/js/montecarlo.js" "$DIR/js/mortality.js" "$DIR/js/amortize.js" "$DIR/js/compound.js" "$DIR/tests/test_core.js"
+  "$DIR/js/core.js" "$DIR/js/montecarlo.js" "$DIR/js/mortality.js" "$DIR/js/amortize.js" "$DIR/js/compound.js" "$DIR/js/qrcode.js" "$DIR/tests/test_core.js"
 
 runbundle "UI smoke (headless DOM)" \
   "$DIR/tests/dom_shim.js" "$DIR/js/market-data.js" "$DIR/js/cape-data.js" "$DIR/js/mortality-data.js" "$DIR/js/stats.js" \
-  "$DIR/js/core.js" "$DIR/js/montecarlo.js" "$DIR/js/mortality.js" "$DIR/js/amortize.js" "$DIR/js/compound.js" "$DIR/js/charts.js" \
+  "$DIR/js/core.js" "$DIR/js/montecarlo.js" "$DIR/js/mortality.js" "$DIR/js/amortize.js" "$DIR/js/compound.js" "$DIR/js/charts.js" "$DIR/js/qrcode.js" \
   "$DIR/js/ui.js" "$DIR/tests/smoke_ui.js"
 
 runbundle "security (hostile hash + input caps)" \
   "$DIR/tests/_hostile_hash.js" "$DIR/tests/dom_shim.js" "$DIR/js/market-data.js" "$DIR/js/cape-data.js" "$DIR/js/mortality-data.js" "$DIR/js/stats.js" \
-  "$DIR/js/core.js" "$DIR/js/montecarlo.js" "$DIR/js/mortality.js" "$DIR/js/amortize.js" "$DIR/js/compound.js" "$DIR/js/charts.js" \
+  "$DIR/js/core.js" "$DIR/js/montecarlo.js" "$DIR/js/mortality.js" "$DIR/js/amortize.js" "$DIR/js/compound.js" "$DIR/js/charts.js" "$DIR/js/qrcode.js" \
   "$DIR/js/ui.js" "$DIR/tests/security_test.js"
 
 # Guard: every runtime module must actually be referenced by index.html. (The
 # headless bundles load them regardless, so only this catches a missing <script>.)
 echo "== index.html references all runtime scripts =="
 miss=0
-for f in market-data cape-data mortality-data stats core montecarlo mortality amortize compound charts ui; do
+for f in market-data cape-data mortality-data stats core montecarlo mortality amortize compound charts qrcode ui; do
   grep -q "js/$f.js" "$DIR/index.html" || { echo "  MISSING <script src=\"js/$f.js\"> in index.html"; miss=1; fail=1; }
 done
-[ $miss -eq 0 ] && echo "  ok: all 11 runtime scripts referenced"
+[ $miss -eq 0 ] && echo "  ok: all 12 runtime scripts referenced"
 echo ""
 
 [ $fail -eq 0 ] && echo "ALL GREEN" || echo "SOME TESTS FAILED"

@@ -179,8 +179,15 @@ details > summary { cursor: pointer; color: var(--accent); font-size: 13px; padd
 .group > details > summary { color: var(--ink); }
 details > summary::-webkit-details-marker { color: var(--ink-soft); }
 .rows { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
-.flowrow, .flowhead { display: grid; grid-template-columns: minmax(56px, 0.9fr) 1fr 50px 50px 40px 72px 30px; gap: 6px; align-items: center; }
+/* 7 columns inside a panel that maxes out at 430px: the fixed columns stay as
+   slim as their content allows and the flexible ones (type / amount / note)
+   share the rest, amount getting the biggest cut -- it's the column that must
+   never truncate. */
+.flowrow, .flowhead { display: grid; grid-template-columns: minmax(46px, 0.8fr) minmax(78px, 1.2fr) 42px 42px 30px minmax(46px, 0.8fr) 28px; gap: 4px; align-items: center; }
+.flowrow input, .flowrow select { padding-left: 6px; padding-right: 6px; }
+.flowrow select { background-position: right 5px center; padding-right: 18px; }
 .flowrow .f-note { font-size: 12px; }
+.flowrow .rm { padding-left: 0; padding-right: 0; }
 .flowhead { padding: 0 2px 2px; }
 .fh { font-size: 10px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.04em; text-align: center; }
 .fh:nth-child(1) { text-align: left; }
@@ -321,6 +328,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .row2 { grid-template-columns: 1fr; }
   .flowrow { grid-template-columns: 1fr 1fr; }
   .flowhead { display: none; }
+  /* In the wrapped 2-col phone layout the note reads better on its own line. */
+  .flowrow .f-note { grid-column: 1 / -1; }
   .topbar .tagline { display: none; }
   .layout { padding: 12px; gap: 12px; }
   .inputs { padding-left: 14px; padding-right: 14px; }
@@ -358,6 +367,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 #report .rpt-fig { margin: 12px 0; break-inside: avoid; }
 #report .rpt-fig figcaption { font-size: 11px; color: #555; margin-bottom: 4px; }
 #report .rpt-fig img { width: 100%; max-width: 660px; border: 1px solid #ddd; }
-#report .rpt-url { font-family: ui-monospace, Menlo, monospace; font-size: 8.5px; word-break: break-all; color: #333; }
+#report .rpt-qr { margin: 10px 0; break-inside: avoid; }
+/* Physical print size (52mm) with crisp module edges; the canvas backing store
+   is ~4px/module so even a v40 code stays above 400dpi on paper. */
+#report .rpt-qr img { width: 52mm; height: 52mm; image-rendering: pixelated; border: 0; }
+#report .rpt-qr figcaption { font-size: 10.5px; color: #555; margin-top: 2px; }
 #report .rpt-vintage { font-size: 10.5px; color: #555; }
 #report .rpt-disclaimer { font-size: 10.5px; color: #777; font-style: italic; }
