@@ -114,9 +114,13 @@
       const cola = row.querySelector(".f-cola").checked;
       const kindSel = row.querySelector(".f-kind");
       const kind = fixedKind || (kindSel ? kindSel.value : "expense");
+      // A short user label ("SS", "roof"); read-side cap because maxlength only
+      // guards typing, not programmatic/hash-restored values. Engine ignores it.
+      const noteEl = row.querySelector(".f-note");
+      const note = noteEl ? String(noteEl.value).slice(0, MAX_NOTE) : "";
       // Bounded like the portfolio itself: a hash-planted 1e308 income would
       // otherwise compound the balance to Infinity and render as "$InfinityB".
-      out.push({ amount: Math.min(Math.abs(amt), MAX_PORTFOLIO), start, end, cola, kind });
+      out.push({ amount: Math.min(Math.abs(amt), MAX_PORTFOLIO), start, end, cola, kind, note });
     });
     return out;
   }
@@ -127,6 +131,7 @@
   const MAX_FLOWS = 50;        // income/adjustment rows
   const MAX_TRIALS = 50000;    // Monte Carlo trials
   const MAX_PORTFOLIO = 1e13;  // $10 trillion ceiling guards against overflow/Infinity
+  const MAX_NOTE = 24;         // per-row note tag; also caps hash-planted strings
 
   function buildParams() {
     const allocation = {};
@@ -206,6 +211,9 @@
     const colaBox = el("input", { class: "f-cola", type: "checkbox" });
     colaBox.checked = v.cola !== false;
     const cola = el("label", { class: "col-cola", title: "Adjust for inflation" }, [colaBox]);
+    const note = el("input", { class: "f-note", type: "text", autocomplete: "off", placeholder: "note", title: "Short label for this row (shows in the printed report)" });
+    note.maxLength = MAX_NOTE;
+    if (v.note) note.value = String(v.note).slice(0, MAX_NOTE);
     const rm = el("button", { class: "ghost rm", type: "button", text: "×", title: "Remove" });
     rm.addEventListener("click", () => {
       row.remove();
@@ -214,7 +222,7 @@
         if (h) h.remove();
       }
     });
-    [first, amt, start, end, cola, rm].forEach((c) => row.appendChild(c));
+    [first, amt, start, end, cola, note, rm].forEach((c) => row.appendChild(c));
     ensureFlowHeader(container, kindSelectable);
     container.appendChild(row);
     return row;
@@ -222,7 +230,7 @@
   // A one-time column header above the rows so "1" / "45" read as start/end year.
   function ensureFlowHeader(container, kindSelectable) {
     if (container.querySelector(".flowhead")) return;
-    const labels = (kindSelectable ? ["Type"] : ["Source"]).concat(["Amount / yr", "Start yr", "End yr", "COLA", ""]);
+    const labels = (kindSelectable ? ["Type"] : ["Source"]).concat(["Amount / yr", "Start yr", "End yr", "COLA", "Note", ""]);
     const h = el("div", { class: "flowhead" });
     labels.forEach((t, i) => {
       const span = el("span", { class: "fh", text: t });
@@ -799,8 +807,8 @@
     const o = {};
     // stripNum: share-links carry plain digits, not display commas.
     PERSIST.forEach((id) => { const e = $(id); if (!e) return; o[id] = e.type === "checkbox" ? (e.checked ? 1 : 0) : stripNum(e.value); });
-    o.inc = readFlows("incomeRows", "income").map((f) => [f.amount, f.start, f.end, f.cola ? 1 : 0]);
-    o.adj = readFlows("adjustRows", null).map((f) => [f.kind === "income" ? 1 : 0, f.amount, f.start, f.end, f.cola ? 1 : 0]);
+    o.inc = readFlows("incomeRows", "income").map((f) => [f.amount, f.start, f.end, f.cola ? 1 : 0, f.note || ""]);
+    o.adj = readFlows("adjustRows", null).map((f) => [f.kind === "income" ? 1 : 0, f.amount, f.start, f.end, f.cola ? 1 : 0, f.note || ""]);
     return o;
   }
   function updateHash() {
@@ -813,12 +821,15 @@
       if (e.type === "checkbox") e.checked = !!(+o[id]); else e.value = String(o[id]);
     });
     // Cap the row count so a hostile hash can't spawn a million DOM nodes.
+    // Notes are optional trailing strings (older links lack them); anything
+    // non-string from a crafted hash is dropped, and length is capped.
+    const noteOf = (x) => (typeof x === "string" ? x.slice(0, MAX_NOTE) : "");
     clearRows("incomeRows");
     (Array.isArray(o.inc) ? o.inc.slice(0, MAX_FLOWS) : []).forEach((a) =>
-      addFlowRow($("incomeRows"), false, { amount: +a[0], start: +a[1], end: +a[2], cola: !!+a[3], kind: "income" }));
+      addFlowRow($("incomeRows"), false, { amount: +a[0], start: +a[1], end: +a[2], cola: !!+a[3], kind: "income", note: noteOf(a[4]) }));
     clearRows("adjustRows");
     (Array.isArray(o.adj) ? o.adj.slice(0, MAX_FLOWS) : []).forEach((a) =>
-      addFlowRow($("adjustRows"), true, { kind: +a[0] ? "income" : "expense", amount: +a[1], start: +a[2], end: +a[3], cola: !!+a[4] }));
+      addFlowRow($("adjustRows"), true, { kind: +a[0] ? "income" : "expense", amount: +a[1], start: +a[2], end: +a[3], cola: !!+a[4], note: noteOf(a[5]) }));
   }
   function loadHash() {
     if (!location.hash || location.hash.length < 2) return false;
@@ -827,6 +838,138 @@
       if (o && typeof o === "object") { applyState(o); return true; }
     } catch (e) { /* ignore malformed hash */ }
     return false;
+  }
+
+  // ---------- print report ----------
+  // Rebuilt from scratch on every print: a light, self-contained summary of the
+  // current inputs + latest results. All dynamic data lands via textContent
+  // (never innerHTML), so user/hash-supplied notes stay inert. Chart canvases
+  // are snapshotted to data: URIs (the CSP allows img-src data:) after a
+  // temporary light-theme redraw so the printout is dark-on-white ink even if
+  // the app is in dark mode; the on-screen theme is restored right after.
+  const ASSET_NAMES = { stocks: "stocks", bonds: "bonds", gold: "gold", cash: "cash", corp: "corp bonds", reit: "REIT", smallcap: "small-cap" };
+  const fmtExact = (x) => "$" + Math.round(x).toLocaleString("en-US");
+  function rptSection(title) {
+    const s = el("section", { class: "rpt-sec" });
+    s.appendChild(el("h2", { text: title }));
+    return s;
+  }
+  function rptKV(sec, k, v) {
+    sec.appendChild(el("div", { class: "rpt-kv" }, [el("span", { class: "rpt-k", text: k }), el("span", { class: "rpt-v", text: v })]));
+  }
+  function strategyText() {
+    const st = $("strategy").value;
+    let t;
+    if (st === "percent") {
+      t = num("spendPercent", 4) + "% of portfolio, withdrawn " +
+        ($("withdrawFreqVal").value === "monthly" ? "monthly (from a 3-mo T-bill cash bucket)" : "annually");
+    } else if (st === "vpw") t = "VPW (amortization) at " + num("vpwReturn", 3.4) + "% assumed real return";
+    else if (st === "cape") t = "CAPE-based: " + num("capeA", 1.75) + "% + " + num("capeB", 0.5) + " × 1/CAPE (current CAPE " + (currentCape() > 0 ? currentCape().toFixed(1) : "n/a") + ")";
+    else if (st === "guyton") t = "Guyton-Klinger from " + fmtExact(num("initialSpend", 0)) + "/yr, " + num("gkGuard", 20) + "% guardrails, " + num("gkAdjust", 10) + "% cut/raise";
+    else t = "Constant (inflation-adjusted): " + fmtExact(num("initialSpend", 0)) + "/yr";
+    const fl = parseFloat(stripNum($("spendFloor").value));
+    const cl = parseFloat(stripNum($("spendCeiling").value));
+    if (isFinite(fl)) t += "; floor " + fmtExact(fl);
+    if (isFinite(cl)) t += "; ceiling " + fmtExact(cl);
+    return t;
+  }
+  function flowText(f) {
+    return (f.kind === "income" ? "Income " : "Expense ") + fmtExact(f.amount) + "/yr, years " +
+      f.start + "–" + f.end + (f.cola ? ", COLA" : ", flat") + (f.note ? " — " + f.note : "");
+  }
+  function rptResults(rpt, label, s, isMC) {
+    const sec = rptSection(label);
+    rptKV(sec, "Success rate", (s.successRate * 100).toFixed(1) + "% — " + s.succeeded + " of " + s.total + (isMC ? " trials" : " cycles") + " lasted the full " + s.years + " years");
+    if (!isMC && s.startYears) rptKV(sec, "Cycle start years", s.startYears.first + "–" + s.startYears.last);
+    if (!isMC && s.representative && s.representative.worst) {
+      const w = s.representative.worst;
+      rptKV(sec, "Worst cycle", w.startYear + (w.success ? " (survived)" : " (failed in year " + (w.failedYear + 1) + ")"));
+    }
+    rptKV(sec, "Ending balance, real (median)", money(s.endingReal.median));
+    rptKV(sec, "Ending balance, real (10th–90th pctl)", money(s.endingReal.p10) + " – " + money(s.endingReal.p90));
+    rptKV(sec, "Ending balance, real (worst)", money(s.endingReal.min));
+    const sp = s.spending;
+    if (sp) {
+      rptKV(sec, "First-year spending", sp.firstYearMax > sp.firstYearMin + 0.5
+        ? fmtExact(sp.firstYearMin) + " – " + fmtExact(sp.firstYearMax) + " (varies by start-year valuation)"
+        : fmtExact(sp.firstYear));
+      if (sp.leanestYear && sp.leanestYear.p10 < sp.leanestYear.median * 0.98) {
+        rptKV(sec, "Leanest year (typical / rough case)", fmtExact(sp.leanestYear.median) + " / " + fmtExact(sp.leanestYear.p10));
+      }
+      if (sp.avgMedian) rptKV(sec, "Average yearly spending (median cycle)", fmtExact(sp.avgMedian));
+    }
+    rpt.appendChild(sec);
+  }
+  function buildReport() {
+    const active = state.mode === "montecarlo" ? state.montecarlo : state.historical;
+    if (!active || !active.total) return false;
+    const rpt = $("report");
+
+    // Snapshot the charts in light theme (print is paper-white); restore after.
+    const themeBefore = document.documentElement.getAttribute("data-theme");
+    if (themeBefore !== "light") { document.documentElement.setAttribute("data-theme", "light"); redrawCharts(); }
+    const shots = [];
+    [["trajCanvas", "Portfolio balance over time"], ["histCanvas", "Ending balance distribution (real, log scale)"], ["rbdCanvas", "Rich, broke or dead"]].forEach((pair) => {
+      const c = $(pair[0]);
+      if (!c || typeof c.toDataURL !== "function") return;
+      if (pair[0] === "rbdCanvas" && $("rbdCard").hidden) return;
+      try { shots.push([pair[1], c.toDataURL("image/png")]); } catch (e) { /* tainted/unrendered: skip */ }
+    });
+    if (themeBefore !== "light") { document.documentElement.setAttribute("data-theme", themeBefore); redrawCharts(); }
+
+    rpt.replaceChildren();
+    rpt.appendChild(el("h1", { text: "WebSWR — retirement simulation report" }));
+    rpt.appendChild(el("p", { class: "rpt-sub", text: "Generated " + new Date().toLocaleString() + " · showing the " + (state.mode === "montecarlo" ? "Monte Carlo" : "historical backtest") + " view" }));
+
+    const plan = rptSection("Plan");
+    rptKV(plan, "Starting portfolio", fmtExact(num("initialValue", 0)));
+    rptKV(plan, "Retirement length", Math.round(num("years", 30)) + " years");
+    const alloc = [];
+    for (const id in ALLOC) { const v = num(id, 0); if (v > 0) alloc.push(v + "% " + ASSET_NAMES[ALLOC[id]]); }
+    rptKV(plan, "Allocation", alloc.join(" · "));
+    rptKV(plan, "Withdrawal strategy", strategyText());
+    rptKV(plan, "Fees / tax on withdrawals", num("feeRate", 0) + "% / " + num("taxRate", 0) + "%");
+    rptKV(plan, "Inflation", $("inflationMode").value === "fixed" ? "fixed " + num("fixedInflation", 3) + "%/yr" : "historical CPI");
+    rptKV(plan, "Age / sex (for mortality overlay)", Math.round(num("currentAge", 65)) + " / " + $("sex").value);
+    if (state.montecarlo) {
+      rptKV(plan, "Monte Carlo settings", $("mcMethod").value + ", " + Math.round(num("mcTrials", 10000)).toLocaleString("en-US") + " trials" +
+        ($("mcMethod").value === "block" ? ", block " + Math.round(num("mcBlock", 5)) : "") + ", seed " + Math.round(num("mcSeed", 0)));
+    }
+    rpt.appendChild(plan);
+
+    const flows = rptSection("Income & adjustments");
+    const inc = readFlows("incomeRows", "income"), adj = readFlows("adjustRows", null);
+    if (!inc.length && !adj.length) flows.appendChild(el("p", { class: "rpt-none", text: "None" }));
+    inc.concat(adj).forEach((f) => flows.appendChild(el("p", { class: "rpt-flow", text: flowText(f) })));
+    rpt.appendChild(flows);
+
+    if (state.historical && state.historical.total) {
+      rptResults(rpt, "Results — historical backtest", state.historical, false);
+    }
+    if (state.montecarlo && state.montecarlo.total) {
+      rptResults(rpt, "Results — Monte Carlo (" + state.montecarlo.method + ")", state.montecarlo, true);
+    }
+
+    shots.forEach((pair) => {
+      const fig = el("figure", { class: "rpt-fig" });
+      fig.appendChild(el("figcaption", { text: pair[0] + " — " + (state.mode === "montecarlo" ? "Monte Carlo" : "historical") + " view, " + (state.dollar === "real" ? "real" : "nominal") + " dollars" }));
+      fig.appendChild(el("img", { src: pair[1], alt: pair[0] }));
+      rpt.appendChild(fig);
+    });
+
+    const foot = rptSection("Reproduce this simulation");
+    updateHash();
+    foot.appendChild(el("p", { class: "rpt-url", text: location.href }));
+    let vintage = "Market data " + DATA.meta.firstYear + "–" + DATA.meta.lastYear + ", generated " + DATA.meta.generated;
+    if (CAPE && CAPE.latest) vintage += " · CAPE as of " + CAPE.latest.date;
+    foot.appendChild(el("p", { class: "rpt-vintage", text: vintage }));
+    foot.appendChild(el("p", { class: "rpt-disclaimer", text: "Educational tool — a historical/statistical simulation, not financial advice and not a guarantee of future results." }));
+    rpt.appendChild(foot);
+    return true;
+  }
+  function printReport() {
+    if (buildReport()) window.print();
+    else msg("Run a simulation first — there are no results to report.", false);
   }
 
   // ---------- theme ----------
@@ -873,6 +1016,10 @@
         () => msg("Could not copy; copy the URL from the address bar.", false));
       else msg("Clipboard unavailable; copy the URL from the address bar.", false);
     });
+    $("printBtn").addEventListener("click", printReport);
+    // Cmd/Ctrl+P without the button: build the report just-in-time. (The button
+    // path triggers this too via window.print(); the rebuild is idempotent.)
+    window.addEventListener("beforeprint", () => { buildReport(); });
     $("themeBtn").addEventListener("click", () =>
       setTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark"));
     const showHelp = (on) => { $("helpOverlay").hidden = !on; };

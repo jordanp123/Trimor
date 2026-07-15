@@ -9,6 +9,14 @@ var adjRows = document.getElementById("adjustRows").children.length;
 A(incRows <= 51, "income rows capped despite 100k in hash (got " + incRows + ")");
 A(adjRows <= 51, "adjustment rows capped despite 100k in hash (got " + adjRows + ")");
 
+// Hostile notes: a ~100KB markup string must land as an INERT input value capped
+// at 24 chars, and a non-string note must be dropped entirely.
+var noteVal = document.getElementById("incomeRows").querySelectorAll(".flowrow")[0].querySelector(".f-note").value;
+A(noteVal.length <= 24, "hash-planted note capped to 24 chars (got " + noteVal.length + ")");
+A(noteVal.indexOf("<img") === 0, "hostile note stored as an inert value, not parsed");
+var adjNote = document.getElementById("adjustRows").querySelectorAll(".flowrow")[0].querySelector(".f-note").value;
+A(adjNote === "", "non-string note from the hash dropped (got '" + adjNote + "')");
+
 // A share-link seed must override init()'s load-time randomization (the random
 // seed is written BEFORE loadHash), or shared links stop replaying exactly.
 A(document.getElementById("mcSeed").value === "424242",

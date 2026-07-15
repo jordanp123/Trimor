@@ -179,7 +179,8 @@ details > summary { cursor: pointer; color: var(--accent); font-size: 13px; padd
 .group > details > summary { color: var(--ink); }
 details > summary::-webkit-details-marker { color: var(--ink-soft); }
 .rows { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
-.flowrow, .flowhead { display: grid; grid-template-columns: minmax(56px, 0.9fr) 1fr 50px 50px 46px 30px; gap: 6px; align-items: center; }
+.flowrow, .flowhead { display: grid; grid-template-columns: minmax(56px, 0.9fr) 1fr 50px 50px 40px 72px 30px; gap: 6px; align-items: center; }
+.flowrow .f-note { font-size: 12px; }
 .flowhead { padding: 0 2px 2px; }
 .fh { font-size: 10px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.04em; text-align: center; }
 .fh:nth-child(1) { text-align: left; }
@@ -333,3 +334,30 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
    (unlike `hidden`) doesn't create a scroll container, so sticky still works. */
 @media (max-width: 920px) { body { overflow-x: clip; } }
 
+
+/* ---------- print report ---------- */
+/* Hidden on screen; ui.js builds it on demand and @media print swaps it in for
+   the whole app. Fixed light colors (no theme vars): print is paper-white
+   regardless of the on-screen theme. */
+#report { display: none; }
+@media print {
+  @page { margin: 14mm; }
+  .topbar, main, #helpOverlay { display: none !important; }
+  html, body { background: #fff !important; }
+  #report { display: block; }
+}
+#report { color: #111; font: 12px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+#report h1 { font-size: 19px; margin: 0 0 2px; color: #000; }
+#report .rpt-sub { margin: 0 0 14px; color: #555; font-size: 11px; }
+#report h2 { font-size: 13px; margin: 14px 0 6px; padding-bottom: 3px; border-bottom: 1px solid #ccc; color: #000; text-transform: uppercase; letter-spacing: 0.04em; }
+#report .rpt-kv { display: flex; justify-content: space-between; gap: 16px; padding: 2.5px 0; border-bottom: 1px dotted #e4e4e4; }
+#report .rpt-k { color: #444; }
+#report .rpt-v { text-align: right; font-variant-numeric: tabular-nums; }
+#report .rpt-flow, #report .rpt-none { margin: 3px 0; }
+#report .rpt-none { color: #777; }
+#report .rpt-fig { margin: 12px 0; break-inside: avoid; }
+#report .rpt-fig figcaption { font-size: 11px; color: #555; margin-bottom: 4px; }
+#report .rpt-fig img { width: 100%; max-width: 660px; border: 1px solid #ddd; }
+#report .rpt-url { font-family: ui-monospace, Menlo, monospace; font-size: 8.5px; word-break: break-all; color: #333; }
+#report .rpt-vintage { font-size: 10.5px; color: #555; }
+#report .rpt-disclaimer { font-size: 10.5px; color: #777; font-style: italic; }

@@ -42,22 +42,57 @@ function ctxStub() {
   };
 }
 
+// Minimal selector matcher: ".class", "tag", or '[data-key="value"]' -- the
+// only forms the app uses on elements (readFlows row lookups, seg buttons,
+// trajMode's [data-mode=...]). Class check covers BOTH the className string
+// (set by el()) and the classList set (toggled by seg handlers).
+function stubMatches(n, sel) {
+  if (sel.charAt(0) === ".") {
+    var c = sel.slice(1);
+    if (n.classList && n.classList.contains(c)) return true;
+    return (" " + (n.className || "") + " ").indexOf(" " + c + " ") >= 0;
+  }
+  var m = /^\[data-([a-zA-Z-]+)="([^"]*)"\]$/.exec(sel);
+  if (m) return n.dataset && n.dataset[m[1]] === m[2];
+  return (n.tagName || "").toLowerCase() === sel.toLowerCase();
+}
+
 function Stub(tag, id) {
   var children = [], attrs = {};
+  // Recursive search over real children AND a seg control's lazy _buttons.
+  function collect(node, sel, out, firstOnly) {
+    var kids = (node.children || []).concat(node._buttons || []);
+    for (var i = 0; i < kids.length; i++) {
+      if (stubMatches(kids[i], sel)) { out.push(kids[i]); if (firstOnly) return; }
+      collect(kids[i], sel, out, firstOnly);
+      if (firstOnly && out.length) return;
+    }
+  }
   var n = {
     tagName: tag || "div", id: id || "",
     value: "", checked: false, textContent: "", className: "", hidden: false,
     disabled: false, type: "", title: "", min: "", max: "", step: "", placeholder: "", name: "",
     width: 0, height: 0, style: {}, dataset: {}, classList: classListFor(), children: children,
-    firstChild: null, lastChild: null, _ev: {}, _buttons: null,
-    appendChild: function (c) { children.push(c); n.firstChild = children[0]; n.lastChild = c; return c; },
-    removeChild: function (c) { var i = children.indexOf(c); if (i >= 0) children.splice(i, 1); n.firstChild = children[0] || null; n.lastChild = children[children.length - 1] || null; },
-    remove: function () {},
-    replaceChildren: function () { children.length = 0; for (var i = 0; i < arguments.length; i++) children.push(arguments[i]); n.firstChild = children[0] || null; n.lastChild = children[children.length - 1] || null; },
+    firstChild: null, lastChild: null, parentNode: null, _ev: {}, _buttons: null,
+    appendChild: function (c) { children.push(c); c.parentNode = n; n.firstChild = children[0]; n.lastChild = c; return c; },
+    insertBefore: function (c, ref) {
+      var i = children.indexOf(ref);
+      if (i < 0) children.push(c); else children.splice(i, 0, c);
+      c.parentNode = n; n.firstChild = children[0]; n.lastChild = children[children.length - 1];
+      return c;
+    },
+    removeChild: function (c) { var i = children.indexOf(c); if (i >= 0) { children.splice(i, 1); c.parentNode = null; } n.firstChild = children[0] || null; n.lastChild = children[children.length - 1] || null; },
+    remove: function () { if (n.parentNode) n.parentNode.removeChild(n); },
+    replaceChildren: function () { children.length = 0; for (var i = 0; i < arguments.length; i++) { children.push(arguments[i]); arguments[i].parentNode = n; } n.firstChild = children[0] || null; n.lastChild = children[children.length - 1] || null; },
     addEventListener: function (t, fn) { (n._ev[t] || (n._ev[t] = [])).push(fn); },
     setAttribute: function (k, v) { attrs[k] = v; if (k === "data-theme") n.dataset.theme = v; },
     getAttribute: function (k) { return attrs[k] !== undefined ? attrs[k] : null; },
-    querySelector: function () { return Stub("div"); },
+    querySelector: function (sel) {
+      n.querySelectorAll("button"); // materialize a seg control's lazy buttons first
+      var out = [];
+      collect(n, sel, out, true);
+      return out.length ? out[0] : null;
+    },
     querySelectorAll: function (sel) {
       // Return the real toggle buttons for segmented controls so ui.js can wire
       // (and our integration test can fire) their click handlers.
@@ -69,9 +104,12 @@ function Stub(tag, id) {
         }
         return n._buttons;
       }
-      return [];
+      var out = [];
+      collect(n, sel, out, false);
+      return out;
     },
     getContext: function () { return ctxStub(); },
+    toDataURL: function () { return "data:image/png;base64,c3R1Yg=="; },
     getBoundingClientRect: function () { return { width: 760, height: n.id === "histCanvas" ? 240 : 360, left: 0, top: 0 }; },
   };
   return n;
@@ -107,7 +145,7 @@ var DEFAULTS = {
 var KNOWN = {};
 ["themeBtn", "helpBtn", "helpOverlay", "helpClose", "helpTitle", "inputs", "allocSum", "spendRateHint", "fixedInflationWrap", "incomeRows", "addIncome",
  "adjustRows", "addAdjust", "mcOptions", "mcBlockWrap", "runBtn", "solveBtn", "shareBtn",
- "capeRateNow", "withdrawFreq", "withdrawFreqHint",
+ "capeRateNow", "withdrawFreq", "withdrawFreqHint", "printBtn", "report",
  "resetBtn", "solveBasis", "solveResult", "gsolveBtn", "gsolveBasis", "gsolveResult", "formMsg", "results", "successCard", "successBig", "successLabel", "headStats",
  "progressWrap", "progressBar", "progressLabel", "trajMode", "dollarMode", "trajUnit", "trajCanvas", "histCanvas",
  "rbdCard", "rbdCanvas", "rbdSub", "detailBody",
@@ -150,4 +188,8 @@ var navigator = {};
 var location = { hash: self.__SWR_TEST_HASH || "", pathname: "/index.html", href: "http://localhost/", reload: function () {} };
 var history = { replaceState: function () {} };
 var localStorage = { getItem: function () { return null; }, setItem: function () {} };
+// Shadow jsc's native stdout print(): window.print() must be a no-op here,
+// and the smoke test asserts the report path actually invoked it.
+var _printed = 0;
+var print = function () { _printed++; };
 // Worker intentionally undefined -> getWorker() falls back to inline Monte Carlo.

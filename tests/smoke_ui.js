@@ -137,6 +137,35 @@ fire(document.getElementById("compoundInputs"), "submit");
 A(document.getElementById("compFv").textContent.indexOf("16,387.93") >= 0,
   "compound recompute: $100/mo @6% 10yr end = $16,387.93 (" + document.getElementById("compFv").textContent + ")");
 
+// Integration: flow-row notes + the print report. Add an income with a note
+// longer than the cap, run, then print -- the report must carry the truncated
+// note, the results, and chart snapshots, and must invoke window.print().
+fire(vtabs[0], "click"); // back to the Retirement view
+fire(document.getElementById("addIncome"), "click");
+var noteRows = document.getElementById("incomeRows").querySelectorAll(".flowrow");
+A(noteRows.length === 1, "addIncome created a flow row (got " + noteRows.length + ")");
+noteRows[0].querySelector(".f-amt").value = "12000";
+noteRows[0].querySelector(".f-start").value = "1";
+noteRows[0].querySelector(".f-end").value = "10";
+noteRows[0].querySelector(".f-note").value = "abcdefghijklmnopqrstuvwxyz"; // 26 chars; read-side cap = 24
+fire(document.getElementById("inputs"), "submit");
+A(/%$/.test(document.getElementById("successBig").textContent), "run with a noted income still renders");
+function textOf(n) {
+  var s = n && n.textContent ? String(n.textContent) : "";
+  ((n && n.children) || []).forEach(function (c) { s += " " + textOf(c); });
+  return s;
+}
+fire(document.getElementById("printBtn"), "click");
+A(_printed >= 1, "print report invoked window.print()");
+var rpt = document.getElementById("report");
+A(rpt.children.length > 0, "report populated");
+var rtxt = textOf(rpt);
+A(rtxt.indexOf("abcdefghijklmnopqrstuvwx") >= 0, "report lists the income note");
+A(rtxt.indexOf("abcdefghijklmnopqrstuvwxy") < 0, "note truncated to 24 chars in the report");
+A(rtxt.indexOf("Success rate") >= 0 && rtxt.indexOf("%") >= 0, "report carries the results stats");
+A(rtxt.indexOf("$12,000/yr") >= 0, "report shows the income amount");
+A(rpt.querySelectorAll("img").length >= 2, "report embeds chart snapshots (" + rpt.querySelectorAll("img").length + ")");
+
 // Chart hover redraw paths must run without throwing (measureText/draw stubbed).
 ["histCanvas", "rbdCanvas"].forEach(function (id) {
   var c = document.getElementById(id);

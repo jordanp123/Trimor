@@ -249,6 +249,7 @@
         </div>
         <div class="util">
           <button id="shareBtn" class="ghost" type="button" title="Copy a link that restores these exact inputs">Copy link</button>
+          <button id="printBtn" class="ghost" type="button" title="Print a report of the current inputs and results">Print report</button>
           <button id="resetBtn" class="ghost" type="button">Reset</button>
         </div>
       </div>
@@ -502,6 +503,10 @@
   </div>
 
   <!-- Classic scripts in dependency order (no ES modules => also works from file://). -->
+  <!-- Print-only report: hidden on screen, built on demand by ui.js printReport();
+       @media print hides the app and shows this instead. -->
+  <div id="report" aria-hidden="true"></div>
+
   <script src="js/market-data.js"></script>
   <script src="js/cape-data.js"></script>
   <script src="js/mortality-data.js"></script>
