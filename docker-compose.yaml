@@ -3,9 +3,9 @@ services:
     build: .
     container_name: WebSWR
     read_only: true
-    user: 7001:7001
+    user: 17001:17001
     restart: unless-stopped
-    security_opt:  #Have to disable if using the Ubuntu SNAP package for docker
+    security_opt:
       - no-new-privileges=true
     cap_drop:
       - ALL
@@ -22,8 +22,8 @@ services:
     networks:
       - backend
   cloudflare_tunnel:
-    user: 7000:7000
-    container_name: cloudflared-tunnel-FBCC
+    user: 17000:17000
+    container_name: cloudflared-tunnel-WebSWR
     image: cloudflare/cloudflared
     read_only: true
     cpu_shares: 768
