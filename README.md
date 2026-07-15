@@ -49,6 +49,26 @@ and the solver automatically run on the main thread instead.
 
 There is **no build step** — the scripts are plain classic `<script>` files.
 
+## Host it yourself (Docker + Cloudflare tunnel)
+
+The repo ships the production deployment: a hardened `nginxinc/nginx-unprivileged`
+container behind a `cloudflared` tunnel, refreshed daily by `update.sh` (git pull
+→ regenerate market/CAPE data → rebuild → restart). Every deploy-specific value
+(repo URL, checkout dir, container UIDs/names, URL path) lives in **one file**:
+
+1. `mkdir -p /root/webswr && cd /root/webswr` (any base directory works)
+2. Copy [`config.webswr.example`](config.webswr.example) to `config.webswr` and edit it
+3. Create `.env` with your tunnel secret: `TUNNEL_TOKEN=...` (`chmod 600 .env`) —
+   make the tunnel in the Cloudflare Zero Trust dashboard and route your
+   hostname/path to `http://<STACK_NAME>:8080`
+4. `curl -fsSLO https://raw.githubusercontent.com/jordanp123/Trimor/main/update.sh`
+   (or your fork) and run `bash update.sh` — it clones, fetches fresh data,
+   builds and starts everything
+5. Root crontab for the daily refresh: `0 5 * * * cd /root/webswr/Trimor && bash update.sh`
+
+`config.webswr` is gitignored and sits in the webroot next to `.env`, so the
+nightly update can never overwrite your settings. It contains no secrets.
+
 ## Tests
 
 All tests run headlessly via macOS **JavaScriptCore** (`osascript`) — no Node, no

@@ -11,5 +11,10 @@ tools/.cache/
 # variable substitution) -- never committed
 .env
 
+# Server-local deployment config (paths/UIDs/names -- no secrets; the repo
+# ships config.webswr.example). Lives in the webroot so the nightly copy can
+# never overwrite the operator's edits.
+config.webswr
+
 # Scratch
 *.tmp

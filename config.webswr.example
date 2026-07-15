@@ -1,0 +1,53 @@
+# WebSWR deployment configuration -- copy this file to `config.webswr` in the
+# WEBROOT (the directory ABOVE the git checkout, next to `.env`) and edit.
+#
+#   cp Trimor/config.webswr.example ../config.webswr     # from the checkout
+#
+# config.webswr is deliberately NOT in the repo (gitignored) so the nightly
+# deploy can never overwrite your edits. It holds NO secrets -- the Cloudflare
+# tunnel token stays in `.env` (TUNNEL_TOKEN=..., chmod 600).
+#
+# Format: plain KEY=value, no spaces around `=`, no quotes. update.sh parses
+# this file as DATA (it is never executed), validates every value against the
+# character sets noted below, and aborts loudly -- with the running site
+# untouched -- on anything suspicious.
+#
+# ---------------------------------------------------------------------------
+# HOSTING THIS YOURSELF (fresh server bootstrap)
+#   1. mkdir -p /root/webswr && cd /root/webswr          # or any base dir
+#   2. Create this file:   config.webswr   (edit the values below)
+#   3. Create the secret:  .env            (TUNNEL_TOKEN=... ; chmod 600 .env)
+#      -- make a tunnel in the Cloudflare Zero Trust dashboard and route your
+#         hostname/path to  http://<STACK_NAME>:8080
+#   4. Fetch the deploy script from your fork:
+#        curl -fsSLO https://raw.githubusercontent.com/<you>/<repo>/main/update.sh
+#   5. bash update.sh                                    # clones + builds + starts
+#   6. Install the daily refresh (root crontab; server-local time):
+#        0 5 * * * cd /root/webswr/Trimor && bash update.sh
+# ---------------------------------------------------------------------------
+
+# Where `git clone` pulls the site from. Used only when the checkout below
+# does not exist yet (first run / fresh server); day-to-day updates `git pull`
+# inside the existing checkout. Point this at your fork if you have one.
+REPO_URL=https://github.com/jordanp123/Trimor.git
+
+# Directory name of the git checkout, created under the webroot.
+# Letters/digits/._- only.
+CHECKOUT_DIR=Trimor
+
+# Unprivileged UIDs the containers run as (also used to chown the webroot).
+# Pick a range unused by other stacks on the same host -- distinct per-app
+# UIDs mean one compromised container can't touch another app's processes.
+APP_UID=17001
+TUNNEL_UID=17000
+
+# Container-name prefix and docker-compose project name (must be unique per
+# stack on the host). Letters/digits/_- only.
+STACK_NAME=WebSWR
+
+# URL path segment the site is served under: https://your.domain/<SUBPATH>/
+# Letters/digits/._- only. Use a single dot (SUBPATH=.) to serve at the
+# domain root instead -- e.g. when hosting on a dedicated subdomain like
+# webswr.example.com. Changing this rebuilds the image on the next run;
+# remember to point the Cloudflare tunnel route at the matching hostname/path.
+SUBPATH=webswr

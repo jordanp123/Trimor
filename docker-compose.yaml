@@ -1,9 +1,18 @@
+# Deployment values come from config.webswr via update.sh (which exports them
+# for the ${VAR:-default} substitutions below). The defaults equal the stock
+# deployment, so a bare `docker compose up -d` still works on a default setup;
+# on a customized box, run update.sh (or export the config first). The compose
+# project name stays auto-derived from the webroot directory name, which keeps
+# network names unique per stack without another variable.
 services:
   website:
-    build: .
-    container_name: WebSWR
+    build:
+      context: .
+      args:
+        SUBPATH: ${SUBPATH:-webswr}
+    container_name: ${STACK_NAME:-WebSWR}
     read_only: true
-    user: 17001:17001
+    user: "${APP_UID:-17001}:${APP_UID:-17001}"
     restart: unless-stopped
     security_opt:
       - no-new-privileges=true
@@ -22,8 +31,8 @@ services:
     networks:
       - backend
   cloudflare_tunnel:
-    user: 17000:17000
-    container_name: cloudflared-tunnel-WebSWR
+    user: "${TUNNEL_UID:-17000}:${TUNNEL_UID:-17000}"
+    container_name: cloudflared-tunnel-${STACK_NAME:-WebSWR}
     image: cloudflare/cloudflared
     read_only: true
     cpu_shares: 768

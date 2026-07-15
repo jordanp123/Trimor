@@ -116,6 +116,12 @@ renders bogus results. Run it with `sh tests/run.sh`.
 
 ## Deployment hardening (recommended)
 
+Deployment settings live in `config.webswr` (server-local, gitignored — see
+`config.webswr.example`). It holds **no secrets**: paths, container UIDs/names
+and the URL path only. The single secret, the Cloudflare `TUNNEL_TOKEN`, stays
+in `.env` (root-owned, `chmod 600`), which the update script re-asserts on
+every run.
+
 The app is safe opened directly, but when hosting it, also send these as **HTTP
 response headers** (a header CSP is stronger than the `<meta>` fallback, and
 `frame-ancestors` — the clickjacking protection — only works as a header).
