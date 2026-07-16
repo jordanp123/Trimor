@@ -8,10 +8,19 @@
     no CDNs, no fonts, no analytics, no XHR/fetch (connect-src 'none'). Every
     script and style is same-origin and there is no inline script, no eval, and
     no inline event handlers. This is the primary defense the project asked for.
+
+    'unsafe-inline' below applies ONLY where this <meta> is the sole policy
+    (file://, or a static host that sends no CSP header). When served with the
+    header from nginx.conf, browsers enforce the INTERSECTION of both policies,
+    and the header allows inline scripts only with its per-request nonce -- so
+    the effective hosted policy stays strict. The relaxation exists because
+    edge proxies (Cloudflare bot detection) inject a nonce-bearing inline
+    script that must pass BOTH policies; the app itself still ships zero
+    inline scripts.
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'self';
+    script-src 'self' 'unsafe-inline';
     style-src 'self';
     img-src 'self' data:;
     font-src 'self';

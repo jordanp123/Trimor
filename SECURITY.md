@@ -130,12 +130,22 @@ no-cache` (filenames aren't content-hashed and the CAPE data changes daily, so
 nothing may be cached as immutable):
 
 ```
-Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+Content-Security-Policy: default-src 'none'; script-src 'self' 'nonce-<per-request>'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 Strict-Transport-Security: max-age=63072000; includeSubDomains
 X-Content-Type-Options: nosniff
 Referrer-Policy: no-referrer
 Cross-Origin-Opener-Policy: same-origin
 ```
+
+The `nonce` is generated fresh per response (`$request_id` in nginx.conf; HTML
+is `no-cache`, so nonces are never reused). The app ships no inline scripts of
+its own — the nonce exists so an edge proxy's injected script (e.g. Cloudflare
+bot detection, which stamps the response's nonce onto its injection) can run
+without resorting to `unsafe-inline`. The `<meta>` CSP fallback in index.html
+carries `unsafe-inline` instead (a `<meta>` policy cannot express per-request
+nonces), but it only governs deployments with **no** CSP header — when the
+header is present, browsers enforce the intersection of both policies and the
+strict nonce rule wins.
 
 Serve over HTTPS, and prefer an immutable/static host. No server-side runtime is
 required or recommended.
