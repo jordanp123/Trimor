@@ -143,7 +143,7 @@ var DEFAULTS = {
 };
 // Non-input element ids that exist in index.html.
 var KNOWN = {};
-["themeBtn", "helpBtn", "helpOverlay", "helpClose", "helpTitle", "inputs", "allocSum", "spendRateHint", "fixedInflationWrap", "incomeRows", "addIncome",
+["themeBtn", "helpBtn", "helpOverlay", "helpClose", "helpTitle", "inputs", "allocSum", "spendRateHint", "fixedInflationWrap", "fixedInflationHint", "incomeRows", "addIncome",
  "adjustRows", "addAdjust", "mcOptions", "mcBlockWrap", "runBtn", "solveBtn", "shareBtn",
  "capeRateNow", "withdrawFreq", "withdrawFreqHint", "printBtn", "report",
  "resetBtn", "solveBasis", "solveResult", "gsolveBtn", "gsolveBasis", "gsolveResult", "formMsg", "results", "successCard", "successBig", "successLabel", "headStats",

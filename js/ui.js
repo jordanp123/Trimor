@@ -292,7 +292,11 @@
     e.textContent = (Math.round(s * 10) / 10) + "%";
     e.classList.toggle("bad", Math.abs(s - 100) > 0.5);
   }
-  const toggleFixed = () => { $("fixedInflationWrap").hidden = $("inflationMode").value !== "fixed"; };
+  const toggleFixed = () => {
+    const off = $("inflationMode").value !== "fixed";
+    $("fixedInflationWrap").hidden = off;
+    $("fixedInflationHint").hidden = off; // the what-if caveat only applies in fixed mode
+  };
   const toggleMcOptions = () => { $("mcOptions").hidden = !$("runMonteCarlo").checked; };
   const toggleMcBlock = () => { $("mcBlockWrap").hidden = $("mcMethod").value !== "block"; };
 

@@ -206,6 +206,7 @@
             <div class="suffixed"><input id="taxRate" type="number" min="0" max="60" step="1" value="0" /><span>%</span></div>
           </div>
         </div>
+        <p class="hint" id="fixedInflationHint" hidden>What-if lever: returns stay historical (nominal); only the inflation applied to your spending changes. Results are no longer a self-consistent replay of history — e.g. the 1970s get easier while the deflationary 1930s get harder.</p>
       </section>
 
       <section class="group">
@@ -457,7 +458,7 @@
         <button id="helpClose" class="ghost" type="button" aria-label="Close help">✕</button>
       </div>
       <div class="modal-body">
-        <p>WebSWR tests whether a retirement portfolio would have lasted, using real market history (1871–2025) and Monte&nbsp;Carlo simulation. Everything runs in your browser — no account, no server, no tracking.</p>
+        <p>WebSWR tests whether a retirement portfolio would have lasted, using real market history (1871–2025) and Monte&nbsp;Carlo simulation. Everything runs in your browser — no account, no tracking.</p>
 
         <h3>The basics</h3>
         <ol>
@@ -472,11 +473,12 @@
           <li><strong>Historical</strong> replays every actual sequence of returns since 1871 — a 30-year plan is tested starting in 1871, 1872, … 1996.</li>
           <li><strong>Monte Carlo</strong> builds thousands of synthetic futures: <em>Bootstrap</em> draws random past years; <em>Block bootstrap</em> draws runs of consecutive years (keeps bad streaks intact); <em>Parametric</em> samples a normal distribution fit to history. Bootstrap is usually the toughest test.</li>
         </ul>
+        <p class="small"><strong>A caveat on the success rate.</strong> Historical cycles overlap — a 30-year window starting in 1965 shares 29 of its years with the 1966 one — so 126 cycles reflect only a handful of truly independent eras, and the failures cluster around a few bad episodes (1906, 1929, the late-1960s stagflation). Treat the number as a stress-test against everything markets have actually done, not as a probability with decimal-point precision.</p>
 
         <h3>Withdrawal strategies</h3>
         <ul>
           <li><strong>Constant dollar</strong> (the “4% rule”) — a fixed amount, raised each year for inflation.</li>
-          <li><strong>Percentage of portfolio</strong> — a fixed % of the current balance each year; it can never run dry, but your income swings with the market.</li>
+          <li><strong>Percentage of portfolio</strong> — a fixed % of the current balance each year; it can never run dry, but your income swings with the market. Its <strong>Withdrawal frequency</strong> toggle chooses how the year's money is paid out: <em>Annual</em> takes it as one January lump; <em>Monthly</em> parks the year's withdrawal in a risk-free 3-month T-bill account and draws it down monthly, crediting the interest back to the portfolio at year-end (historical T-bill rates; 0% before 1928, when the series begins).</li>
           <li><strong>CAPE-based</strong> (Big ERN) — a valuation-aware percentage: each year you withdraw <em>a + b × (1/CAPE)</em> of the balance, so the rate is <em>lower</em> when stocks are expensive (high CAPE) and higher when they're cheap. See below.</li>
           <li><strong>Guyton-Klinger guardrails</strong> — constant-dollar with rules that trim spending after bad years and raise it after good ones.</li>
           <li><strong>VPW</strong> (variable percentage) — intentionally spends the portfolio down to ~$0 by the end, like a self-managed annuity.</li>
