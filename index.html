@@ -4,10 +4,16 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <!--
-    Strict Content-Security-Policy. The app loads NOTHING from the network:
-    no CDNs, no fonts, no analytics, no XHR/fetch (connect-src 'none'). Every
-    script and style is same-origin and there is no inline script, no eval, and
-    no inline event handlers. This is the primary defense the project asked for.
+    Strict Content-Security-Policy. The app itself loads NOTHING from the
+    network: no CDNs, no fonts, no analytics, and it ships zero fetch/XHR
+    code. Every script and style is same-origin and there is no inline
+    script, no eval, and no inline event handlers.
+
+    connect-src 'self' (not 'none') exists solely so the hosting CDN's
+    bot-detection beacon (a same-origin POST to /cdn-cgi/*, answered at the
+    edge) can function for security/WAF purposes; it carries no app data and
+    we collect nothing. Every cross-origin request remains blocked — do not
+    widen this further.
 
     'unsafe-inline' below applies ONLY where this <meta> is the sole policy
     (file://, or a static host that sends no CSP header). When served with the
@@ -24,7 +30,7 @@
     style-src 'self';
     img-src 'self' data:;
     font-src 'self';
-    connect-src 'none';
+    connect-src 'self';
     worker-src 'self';
     manifest-src 'self';
     object-src 'none';
@@ -53,7 +59,7 @@
         <button type="button" data-view="loan">Loan calc</button>
         <button type="button" data-view="compound">Compound</button>
       </div>
-      <span class="badge" title="No network requests, no tracking, no accounts. All math runs locally.">🔒 Offline &amp; private</span>
+      <span class="badge" title="No accounts, no analytics, nothing you enter is transmitted. All math runs locally in your browser.">🔒 Local &amp; private</span>
       <button id="helpBtn" class="ghost" type="button" title="How WebSWR works">Help</button>
       <button id="themeBtn" class="ghost" type="button" title="Toggle light/dark">◐</button>
     </div>
@@ -331,7 +337,7 @@
         Educational tool, not financial advice. Past returns do not predict the future.
         Data: 1928–2025 from Aswath Damodaran (NYU Stern) total returns + BLS CPI-U inflation;
         1871–1927 reconstructed from Robert Shiller's annual data (stocks, bonds, inflation).
-        Everything runs locally in your browser — no network, no tracking.
+        All calculations run locally in your browser — nothing you enter is transmitted.
       </p>
     </div>
     </div><!-- /#viewMain -->
@@ -504,7 +510,7 @@
         <p>Annual total returns: <strong>1928–present</strong> from Aswath Damodaran (NYU Stern) with CPI-U inflation from the BLS; <strong>1871–1927</strong> reconstructed from Robert Shiller’s data (stocks, bonds, inflation only — an annual approximation). Gold, cash, corporate bonds, real estate and small-cap begin in 1928, so using them limits cycles to 1928+.</p>
 
         <h3>Privacy &amp; safety</h3>
-        <p>No network requests, no cookies, no analytics — it works fully offline and your inputs never leave your browser. <strong>Copy link</strong> encodes your scenario into the URL so you can bookmark or share it; that link contains your numbers, so share it deliberately.</p>
+        <p>No accounts, no analytics, and the app sends nothing you enter anywhere — every simulation runs locally and your inputs never leave your browser. (The hosting CDN runs a standard bot-detection check for security; it never sees your numbers.) <strong>Copy link</strong> encodes your scenario into the URL so you can bookmark or share it; that link contains your numbers, so share it deliberately.</p>
 
         <p class="modal-disclaimer">Educational tool — not financial advice. Past performance does not predict future results.</p>
       </div>

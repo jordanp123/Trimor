@@ -8,12 +8,14 @@ mitigations in the code.
 ## Threat model
 
 WebSWR is a **static, client-side application**. There is no backend, no
-database, no authentication, and it makes **no network requests at runtime**.
-That removes most of the usual web attack surface outright:
+database, no authentication, and the app ships **no fetch/XHR/WebSocket code**
+— nothing the user enters is ever transmitted. That removes most of the usual
+web attack surface outright:
 
 - No server-side code → no SQL injection, no RCE, no auth bypass, no SSRF.
-- No network calls → nothing to intercept, no API to abuse, no data exfiltration.
-- No accounts or cookies → no session/CSRF issues.
+- No network code in the app → no API to abuse, no data exfiltration by the
+  app, and CSP blocks every cross-origin request as a backstop.
+- No accounts or cookies of ours → no session/CSRF issues.
 
 The realistic attacker is therefore someone who crafts a **malicious share link**
 and gets a victim to open it, hoping to (a) run script in the victim’s browser
@@ -36,13 +38,18 @@ too — see Deployment):
 
 ```
 default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:;
-font-src 'self'; connect-src 'none'; worker-src 'self'; object-src 'none';
+font-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none';
 child-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none';
 ```
 
-- `script-src 'self'` with **no `'unsafe-inline'`/`'unsafe-eval'`** — even if an
-  injection were found, the browser would refuse to run inline or eval’d script.
-- `connect-src 'none'` — the page cannot make `fetch`/XHR/WebSocket calls at all.
+- `script-src 'self'` with **no `'unsafe-eval'`** — even if an injection were
+  found, the browser would refuse to run eval’d script. (The header policy also
+  blocks all inline script except a per-request nonce; see Deployment.)
+- `connect-src 'self'` — every **cross-origin** `fetch`/XHR/WebSocket is
+  blocked. Same-origin is allowed solely so the hosting CDN's bot-detection
+  beacon (a POST to `/cdn-cgi/*`, answered at the edge) can work for
+  security/WAF purposes; the app itself contains no network code, and the
+  origin server rejects every non-GET/HEAD request with a 405.
 - `frame-ancestors 'none'` — cannot be framed (clickjacking).
 - `base-uri 'none'`, `form-action 'none'`, `object-src 'none'` — close common
   bypasses.
@@ -130,7 +137,7 @@ no-cache` (filenames aren't content-hashed and the CAPE data changes daily, so
 nothing may be cached as immutable):
 
 ```
-Content-Security-Policy: default-src 'none'; script-src 'self' 'nonce-<per-request>'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+Content-Security-Policy: default-src 'none'; script-src 'self' 'nonce-<per-request>'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 Strict-Transport-Security: max-age=63072000; includeSubDomains
 X-Content-Type-Options: nosniff
 Referrer-Policy: no-referrer
