@@ -186,6 +186,35 @@ A(slim.indexOf("strategy") >= 0 && slim.indexOf("targetSuccess") >= 0 && slim.in
 A(slim.indexOf("vpwReturn") < 0 && slim.indexOf("gkGuard") < 0 && slim.indexOf("allocGold") < 0 && slim.indexOf("adj") < 0,
   "slim hash omits untouched fields and empty flow lists");
 
+// The Print button AUTO-RUNS first: edit an input WITHOUT submitting, print,
+// and the report must reflect the edit (WYSIWYG). In this shim the inline MC
+// path is synchronous, so the print fires on the same tick.
+document.getElementById("initialValue").value = "2222222";
+fire(document.getElementById("initialValue"), "input");
+var printsBefore = _printed;
+fire(document.getElementById("printBtn"), "click");
+A(_printed === printsBefore + 1, "print button auto-ran and printed (" + (_printed - printsBefore) + " print call)");
+A(textOf(document.getElementById("report")).indexOf("2,222,222") >= 0,
+  "report reflects the un-submitted edit (auto-run before print)");
+
+// Cmd/Ctrl+P prints the ACTIVE view's report: loan and compound tabs get
+// their own reports (recomputed synchronously, so never stale).
+function fireBeforePrint() { (window._ev.beforeprint || []).forEach(function (f) { f(); }); }
+fire(vtabs[1], "click"); // Loan tab
+fireBeforePrint();
+var rptText = textOf(document.getElementById("report"));
+A(rptText.indexOf("loan amortization report") >= 0 && rptText.indexOf("2,212.24") >= 0,
+  "Cmd+P on the Loan tab builds the loan report with the exact payment");
+fire(vtabs[2], "click"); // Compound tab
+fireBeforePrint();
+rptText = textOf(document.getElementById("report"));
+A(rptText.indexOf("compound interest report") >= 0 && rptText.indexOf("16,387.93") >= 0,
+  "Cmd+P on the Compound tab builds the compound report with the exact FV");
+fire(vtabs[0], "click"); // back to Retirement
+fireBeforePrint();
+A(textOf(document.getElementById("report")).indexOf("retirement simulation report") >= 0,
+  "Cmd+P back on the Retirement tab builds the simulation report");
+
 // Chart hover redraw paths must run without throwing (measureText/draw stubbed).
 ["histCanvas", "rbdCanvas"].forEach(function (id) {
   var c = document.getElementById(id);

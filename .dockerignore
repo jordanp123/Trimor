@@ -1,11 +1,15 @@
-# Keep the build context to what the Dockerfile actually COPYs
-# (css/, js/, index.html, nginx.conf). On the server the context is the
-# assembled webroot, which also holds the tunnel token and the git checkout --
-# neither belongs anywhere near the docker daemon.
-.env
-.git
-Trimor
-data
-tools
-tests
-.DS_Store
+# ALLOWLIST: exclude the entire build context, then re-include exactly what
+# the Dockerfile COPYs. Anything new in the webroot (secrets, configs, the git
+# checkout -- whatever CHECKOUT_DIR is named) is excluded BY DEFAULT instead
+# of needing to be remembered here. On the server the context is the assembled
+# webroot, which also holds .env (tunnel token) and config.webswr; neither
+# belongs anywhere near the docker daemon.
+#
+# GOTCHA: keep the exclusion a single `*` (NOT `**`, which would also strip
+# the re-included directories' contents), and every new COPY line added to the
+# Dockerfile needs a matching `!` line below or the build can't find the file.
+*
+!index.html
+!nginx.conf
+!css
+!js

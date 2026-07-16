@@ -179,7 +179,10 @@ function getComputedStyle() { return { getPropertyValue: function () { return ""
 function requestAnimationFrame(cb) { cb(); return 0; }
 function matchMedia() { return { matches: false }; }
 window.matchMedia = matchMedia;
-window.addEventListener = function () {};
+// Record window-level listeners (beforeprint, resize) so tests can fire them:
+// (window._ev.beforeprint || []).forEach(function (f) { f(); })
+window._ev = {};
+window.addEventListener = function (t, fn) { (window._ev[t] || (window._ev[t] = [])).push(fn); };
 function setTimeout(fn) { fn(); return 0; } // synchronous => inline MC runs during the test
 function clearTimeout() {}
 function btoa(s) { return s; }

@@ -28,6 +28,7 @@
   const state = { historical: null, montecarlo: null, mode: "historical", dollar: "real", solveBasis: "historical", gsolveBasis: "historical", params: null, data: null, view: "main", loan: null, loanDone: false, compound: null, compoundDone: false, compTiming: "start" };
   let worker = null, workerOK = true, solvePending = null;
   let solving = false, solveTimer = null, solveFallback = null;
+  let printPending = false; // a Print click waiting on an in-flight Monte Carlo pass
   // If the Worker doesn't make progress on a solve within this window (e.g. a
   // stale cached worker without the 'solve' handler, or a worker error), run the
   // solve inline instead. Re-armed on every progress tick, so a healthy worker
@@ -340,7 +341,11 @@
   // Results default to the Historical view: when Monte Carlo finishes we only
   // store it and ENABLE its tab -- we don't auto-switch the view, so Historical
   // stays selected until the user clicks the Monte Carlo tab themselves.
-  function onMC(s) { state.montecarlo = s; showProgress(false); enableMcTab(true); }
+  function onMC(s) {
+    state.montecarlo = s; showProgress(false); enableMcTab(true);
+    // A print is waiting on this Monte Carlo pass: build + print now.
+    if (printPending) { printPending = false; if (buildSimReport()) window.print(); }
+  }
 
   function getWorker() {
     if (worker || !workerOK) return worker;
@@ -352,9 +357,9 @@
         else if (m.type === "result") onMC(m.summary);
         else if (m.type === "solveResult") applySolve(m.max);
         else if (m.type === "gsolveResult") applyGsolve(m.result);
-        else if (m.type === "error") { showProgress(false); if (solving && solveFallback) solveFallback(); else msg("Monte Carlo error: " + m.message, false); }
+        else if (m.type === "error") { showProgress(false); printPending = false; if (solving && solveFallback) solveFallback(); else msg("Monte Carlo error: " + m.message, false); }
       };
-      worker.onerror = () => { showProgress(false); workerOK = false; worker = null; };
+      worker.onerror = () => { showProgress(false); printPending = false; workerOK = false; worker = null; };
     } catch (e) { workerOK = false; worker = null; }
     return worker;
   }
@@ -918,22 +923,41 @@
     }
     rpt.appendChild(sec);
   }
-  function buildReport() {
+  // Snapshot canvases to data: URIs under a temporary light theme -- paper is
+  // white regardless of the on-screen theme. `redraw` re-renders the relevant
+  // canvases after each theme flip; a truthy pair[2] marks a hidden canvas to skip.
+  function snapCharts(pairs, redraw) {
+    const themeBefore = document.documentElement.getAttribute("data-theme");
+    if (themeBefore !== "light") { document.documentElement.setAttribute("data-theme", "light"); redraw(); }
+    const shots = [];
+    pairs.forEach((pair) => {
+      const c = $(pair[0]);
+      if (!c || typeof c.toDataURL !== "function" || pair[2]) return;
+      try { shots.push([pair[1], c.toDataURL("image/png")]); } catch (e) { /* unrendered: skip */ }
+    });
+    if (themeBefore !== "light") { document.documentElement.setAttribute("data-theme", themeBefore); redraw(); }
+    return shots;
+  }
+  function appendShots(rpt, shots, suffix) {
+    shots.forEach((pair) => {
+      const fig = el("figure", { class: "rpt-fig" });
+      fig.appendChild(el("figcaption", { text: pair[0] + (suffix || "") }));
+      fig.appendChild(el("img", { src: pair[1], alt: pair[0] }));
+      rpt.appendChild(fig);
+    });
+  }
+  const DISCLAIMER = "Educational tool — a historical/statistical simulation, not financial advice and not a guarantee of future results.";
+
+  function buildSimReport() {
     const active = state.mode === "montecarlo" ? state.montecarlo : state.historical;
     if (!active || !active.total) return false;
     const rpt = $("report");
 
-    // Snapshot the charts in light theme (print is paper-white); restore after.
-    const themeBefore = document.documentElement.getAttribute("data-theme");
-    if (themeBefore !== "light") { document.documentElement.setAttribute("data-theme", "light"); redrawCharts(); }
-    const shots = [];
-    [["trajCanvas", "Portfolio balance over time"], ["histCanvas", "Ending balance distribution (real, log scale)"], ["rbdCanvas", "Rich, broke or dead"]].forEach((pair) => {
-      const c = $(pair[0]);
-      if (!c || typeof c.toDataURL !== "function") return;
-      if (pair[0] === "rbdCanvas" && $("rbdCard").hidden) return;
-      try { shots.push([pair[1], c.toDataURL("image/png")]); } catch (e) { /* tainted/unrendered: skip */ }
-    });
-    if (themeBefore !== "light") { document.documentElement.setAttribute("data-theme", themeBefore); redrawCharts(); }
+    const shots = snapCharts([
+      ["trajCanvas", "Portfolio balance over time"],
+      ["histCanvas", "Ending balance distribution (real, log scale)"],
+      ["rbdCanvas", "Rich, broke or dead", $("rbdCard").hidden],
+    ], redrawCharts);
 
     rpt.replaceChildren();
     rpt.appendChild(el("h1", { text: "WebSWR — retirement simulation report" }));
@@ -968,12 +992,7 @@
       rptResults(rpt, "Results — Monte Carlo (" + state.montecarlo.method + ")", state.montecarlo, true);
     }
 
-    shots.forEach((pair) => {
-      const fig = el("figure", { class: "rpt-fig" });
-      fig.appendChild(el("figcaption", { text: pair[0] + " — " + (state.mode === "montecarlo" ? "Monte Carlo" : "historical") + " view, " + (state.dollar === "real" ? "real" : "nominal") + " dollars" }));
-      fig.appendChild(el("img", { src: pair[1], alt: pair[0] }));
-      rpt.appendChild(fig);
-    });
+    appendShots(rpt, shots, " — " + (state.mode === "montecarlo" ? "Monte Carlo" : "historical") + " view, " + (state.dollar === "real" ? "real" : "nominal") + " dollars");
 
     const foot = rptSection("About this report");
     // The share URL itself is useless on paper (hundreds of characters), so it
@@ -993,13 +1012,110 @@
     let vintage = "Market data " + DATA.meta.firstYear + "–" + DATA.meta.lastYear + ", generated " + DATA.meta.generated;
     if (CAPE && CAPE.latest) vintage += " · CAPE as of " + CAPE.latest.date;
     foot.appendChild(el("p", { class: "rpt-vintage", text: vintage }));
-    foot.appendChild(el("p", { class: "rpt-disclaimer", text: "Educational tool — a historical/statistical simulation, not financial advice and not a guarantee of future results." }));
+    foot.appendChild(el("p", { class: "rpt-disclaimer", text: DISCLAIMER }));
     rpt.appendChild(foot);
     return true;
   }
+
+  function buildLoanReport() {
+    runLoan(); // synchronous: recompute from the CURRENT inputs (keeps last-good on invalid)
+    const s = state.loan;
+    if (!s) return false;
+    const rpt = $("report");
+    const shots = snapCharts([["loanCanvas", "Balance and cumulative interest over the term"]],
+      () => SWR.charts.loanChart($("loanCanvas"), s));
+    rpt.replaceChildren();
+    rpt.appendChild(el("h1", { text: "WebSWR — loan amortization report" }));
+    rpt.appendChild(el("p", { class: "rpt-sub", text: "Generated " + new Date().toLocaleString() }));
+    const plan = rptSection("Loan");
+    rptKV(plan, "Amount", fmtExact(num("loanAmount", 0)));
+    rptKV(plan, "Interest rate (APR)", num("loanApr", 0) + "%");
+    rptKV(plan, "Term", num("loanTerm", 30) + " years");
+    const extra = num("loanExtra", 0);
+    if (extra > 0) rptKV(plan, "Extra payment / month", fmtExact(extra));
+    rpt.appendChild(plan);
+    const res = rptSection("Results");
+    const dur = (mo) => Math.floor(mo / 12) + "y " + (mo % 12) + "m";
+    rptKV(res, "Monthly payment", "$" + s.payment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    rptKV(res, "Total interest", fmtExact(s.totalInterest));
+    rptKV(res, "Total paid", fmtExact(s.totalPaid));
+    rptKV(res, "Payoff time", dur(s.payoffMonths));
+    if (s.monthsSaved > 0) rptKV(res, "Time saved by extra payments", dur(s.monthsSaved));
+    rpt.appendChild(res);
+    appendShots(rpt, shots);
+    const sched = rptSection("Yearly schedule");
+    const years = [];
+    for (const r of s.rows) {
+      const y = Math.ceil(r.month / 12);
+      const e = years[y - 1] || (years[y - 1] = { year: y, interest: 0, principal: 0, balance: 0 });
+      e.interest += r.interest; e.principal += r.principal; e.balance = r.balance;
+    }
+    years.forEach((y) => rptKV(sched, "Year " + y.year,
+      money(y.principal) + " principal · " + money(y.interest) + " interest · " + money(y.balance) + " left"));
+    rpt.appendChild(sched);
+    const foot = rptSection("About this report");
+    foot.appendChild(el("p", { class: "rpt-disclaimer", text: DISCLAIMER }));
+    rpt.appendChild(foot);
+    return true;
+  }
+
+  function buildCompoundReport() {
+    runCompound(); // synchronous: recompute from the CURRENT inputs
+    const s = state.compound;
+    if (!s) return false;
+    const rpt = $("report");
+    const shots = snapCharts([["compCanvas", "Balance vs contributions over time"]],
+      () => SWR.charts.compoundChart($("compCanvas"), s));
+    rpt.replaceChildren();
+    rpt.appendChild(el("h1", { text: "WebSWR — compound interest report" }));
+    rpt.appendChild(el("p", { class: "rpt-sub", text: "Generated " + new Date().toLocaleString() }));
+    const plan = rptSection("Inputs");
+    rptKV(plan, "Starting principal", fmtExact(num("compPrincipal", 0)));
+    rptKV(plan, "Annual addition", fmtExact(num("compAddition", 0)) + " (" + (state.compTiming === "start" ? "start" : "end") + " of period)");
+    rptKV(plan, "Rate / compounding", num("compRate", 5) + "%, " + Math.round(num("compTimes", 1)) + "× per year");
+    rptKV(plan, "Years", Math.round(num("compYears", 5)));
+    rpt.appendChild(plan);
+    const res = rptSection("Results");
+    rptKV(res, "Future value", "$" + s.fv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    rptKV(res, "Total contributed", fmtExact(s.contributed));
+    rptKV(res, "Interest earned", fmtExact(s.interest));
+    rpt.appendChild(res);
+    appendShots(rpt, shots);
+    const sched = rptSection("Yearly balances");
+    s.series.forEach((pt, i) => { if (i > 0) rptKV(sched, "Year " + i, fmtExact(pt.balance)); });
+    rpt.appendChild(sched);
+    const foot = rptSection("About this report");
+    foot.appendChild(el("p", { class: "rpt-disclaimer", text: DISCLAIMER }));
+    rpt.appendChild(foot);
+    return true;
+  }
+
+  // Cmd/Ctrl+P (and the print button) produce the report for whatever view the
+  // user is looking at. Loan and compound recompute synchronously first, so
+  // they can never print numbers that are stale against the visible inputs.
+  function buildReport() {
+    if (state.view === "loan") return buildLoanReport();
+    if (state.view === "compound") return buildCompoundReport();
+    return buildSimReport();
+  }
+
+  // The Print button re-runs the simulation first so the report always matches
+  // the inputs on screen. The historical pass is synchronous; when Monte Carlo
+  // is enabled we wait for the worker round-trip and print the moment it lands
+  // (with a 15s fallback that prints the historical results alone).
   function printReport() {
-    if (buildReport()) window.print();
-    else msg("Run a simulation first — there are no results to report.", false);
+    if (state.view !== "main") { if (buildReport()) window.print(); return; }
+    const err = validate();
+    if (err) return msg(err, false);
+    run(); // fresh results for the current inputs
+    if ($("runMonteCarlo").checked && !state.montecarlo) {
+      printPending = true;
+      setTimeout(() => { if (printPending) { printPending = false; if (buildSimReport()) window.print(); } }, 15000);
+    } else if (buildSimReport()) {
+      window.print();
+    } else {
+      msg("Run a simulation first — there are no results to report.", false);
+    }
   }
 
   // ---------- theme ----------
