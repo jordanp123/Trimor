@@ -41,6 +41,12 @@ CHECKOUT_DIR=Trimor
 APP_UID=17001
 TUNNEL_UID=17000
 
+# UID the data fetchers (fetch_data.py / fetch_cape.py) run as. They parse
+# HTML fetched from the internet -- the only untrusted input on the host --
+# so the root cron drops to this UID (via setpriv) before running them.
+# 65534 = nobody on Debian/Ubuntu.
+FETCH_UID=65534
+
 # Container-name prefix and docker-compose project name (must be unique per
 # stack on the host). Letters/digits/_- only.
 STACK_NAME=WebSWR

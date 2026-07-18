@@ -11,7 +11,7 @@
 # either this script's own directory (webroot copy / fresh bootstrap) or its
 # parent (the checkout copy that cron runs).
 {
-set -eu
+set -eEu
 
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Parent first: when cron runs the CHECKOUT's copy, the webroot is the parent.
@@ -33,6 +33,7 @@ REPO_URL="$(cfg REPO_URL)"
 CHECKOUT_DIR="$(cfg CHECKOUT_DIR)"
 APP_UID="$(cfg APP_UID)"
 TUNNEL_UID="$(cfg TUNNEL_UID)"
+FETCH_UID="$(cfg FETCH_UID)"
 STACK_NAME="$(cfg STACK_NAME)"
 SUBPATH="$(cfg SUBPATH)"
 
@@ -55,8 +56,23 @@ esac
 case "$TUNNEL_UID" in
   *[!0-9]*|"") echo "FATAL: TUNNEL_UID must be numeric" >&2; exit 1 ;;
 esac
+case "$FETCH_UID" in
+  *[!0-9]*|""|0) echo "FATAL: FETCH_UID must be a non-root numeric UID (65534 = nobody)" >&2; exit 1 ;;
+esac
+command -v setpriv >/dev/null || { echo "FATAL: setpriv (util-linux) is required to drop privileges for the data fetchers" >&2; exit 1; }
 # docker compose reads these for variable substitution (user:, names, SUBPATH).
 export APP_UID TUNNEL_UID STACK_NAME SUBPATH
+
+# ── Self-logging: every run (cron or manual) appends to $BASE/update.log with
+# a start banner, an OK/ABORTED end line, and the deployed commit + images --
+# so a silent abort or a tampered deploy is visible in one glance at the log,
+# not just as mysteriously stale data. Size-rotated in place (no logrotate
+# dependency); the log stays out of the docker build context (allowlist).
+LOG="$BASE/update.log"
+if [ -f "$LOG" ] && [ "$(wc -c < "$LOG")" -gt 1048576 ]; then mv -f "$LOG" "$LOG.1"; fi
+exec > >(tee -a "$LOG") 2>&1
+echo "=== update run started $(date -u +%FT%TZ) ==="
+trap 'echo "=== ABORTED (exit $?) $(date -u +%FT%TZ) ==="' ERR
 
 CHECKOUT="$BASE/$CHECKOUT_DIR"
 
@@ -82,9 +98,17 @@ cp "$CHECKOUT_DIR/.dockerignore" "$BASE/"   # glob above skips dotfiles
 # series to market-data's year axis -- running it second means both files come
 # from the same morning's data (otherwise, each January the site would ship a
 # market file with one more year than the CAPE file).
+#
+# PRIVILEGE DROP: the fetchers parse HTML fetched from the internet -- the only
+# untrusted input this host processes -- so they must not run as root. setpriv
+# drops to $FETCH_UID with no supplementary groups and no-new-privs; the dirs
+# they write (js/ data/ tools/, incl. the .cache) are handed to that UID first
+# and reclaimed by the blanket chown below.
+cd "$BASE"
+chown -R "$FETCH_UID:$FETCH_UID" js data tools
 cd "$BASE/tools"
-python3 fetch_data.py --refresh
-python3 fetch_cape.py --refresh
+setpriv --reuid="$FETCH_UID" --regid="$FETCH_UID" --clear-groups --no-new-privs python3 fetch_data.py --refresh
+setpriv --reuid="$FETCH_UID" --regid="$FETCH_UID" --clear-groups --no-new-privs python3 fetch_cape.py --refresh
 
 cd "$BASE"
 chown -R "$APP_UID:$APP_UID" ./*   # match the website container's user (config.webswr)
@@ -102,7 +126,15 @@ chown -R root:root "$CHECKOUT_DIR"
 docker compose pull
 docker compose build --pull
 docker compose up -d
+
+# Forensic record: what exactly is deployed right now (git commit + the image
+# ids the containers were created from). With the start/OK banners this makes
+# the log a verifiable timeline of every change that reached production.
+echo "deployed commit: $(git -C "$CHECKOUT" rev-parse HEAD)"
+docker compose images
+
 docker system prune -f -a
 
+echo "=== OK $(date -u +%FT%TZ) ==="
 exit 0
 }
