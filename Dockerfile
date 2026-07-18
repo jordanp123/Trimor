@@ -1,4 +1,4 @@
-FROM nginxinc/nginx-unprivileged:alpine
+FROM nginxinc/nginx-unprivileged:alpine-slim
 
 # URL path segment the site is served under (config.webswr SUBPATH, passed as
 # a build arg by docker-compose). "." serves at the domain root instead --
