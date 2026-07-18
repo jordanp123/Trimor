@@ -100,15 +100,35 @@ cp "$CHECKOUT_DIR/.dockerignore" "$BASE/"   # glob above skips dotfiles
 # market file with one more year than the CAPE file).
 #
 # PRIVILEGE DROP: the fetchers parse HTML fetched from the internet -- the only
-# untrusted input this host processes -- so they must not run as root. setpriv
-# drops to $FETCH_UID with no supplementary groups and no-new-privs; the dirs
-# they write (js/ data/ tools/, incl. the .cache) are handed to that UID first
-# and reclaimed by the blanket chown below.
-cd "$BASE"
-chown -R "$FETCH_UID:$FETCH_UID" js data tools
-cd "$BASE/tools"
+# untrusted input this host processes -- so they must not run as root. They
+# CANNOT run in place: the webroot sits under /root (0700), which $FETCH_UID
+# rightly cannot traverse. Instead they run in a throwaway staging dir under
+# /tmp owned by $FETCH_UID (mode 700: other stacks' UIDs can't peek either),
+# and root copies back exactly the three expected output files afterwards.
+# Net effect: the fetch UID can't even SEE the webroot -- stronger isolation
+# than running them in place would give.
+FETCHDIR="$(mktemp -d /tmp/webswr-fetch.XXXXXX)"
+trap 'rm -rf "$FETCHDIR"' EXIT
+cp -r "$BASE/tools" "$BASE/data" "$FETCHDIR/"
+rm -rf "$FETCHDIR/tools/.cache" # always fetch fresh; no stale cache in the sandbox
+mkdir -p "$FETCHDIR/js"
+chown -R "$FETCH_UID:$FETCH_UID" "$FETCHDIR"
+cd "$FETCHDIR/tools"
 setpriv --reuid="$FETCH_UID" --regid="$FETCH_UID" --clear-groups --no-new-privs python3 fetch_data.py --refresh
 setpriv --reuid="$FETCH_UID" --regid="$FETCH_UID" --clear-groups --no-new-privs python3 fetch_cape.py --refresh
+# No fetch-UID stragglers may outlive the fetch (a compromised fetcher could
+# fork and try to race the copy-back below).
+pkill -U "$FETCH_UID" 2>/dev/null || true
+# Copy back ONLY the expected outputs, refusing symlinks -- root must never
+# dereference a link planted by the (untrusted) fetch stage into a file that
+# would then be served publicly.
+cd "$BASE"
+for f in js/market-data.js js/cape-data.js data/market-data.json; do
+  if [ -h "$FETCHDIR/$f" ] || [ ! -f "$FETCHDIR/$f" ]; then
+    echo "FATAL: fetch output $f is missing or not a regular file" >&2; exit 1
+  fi
+  cp "$FETCHDIR/$f" "$BASE/$f"
+done
 
 cd "$BASE"
 chown -R "$APP_UID:$APP_UID" ./*   # match the website container's user (config.webswr)
