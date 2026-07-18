@@ -57,6 +57,13 @@ assert(H({ spending: { strategy: "percent", percent: 0.04 } }).successRate === 1
 // 5) VPW and Guyton-Klinger run and are also non-depleting / higher-success than constant.
 var rv = H({ spending: { strategy: "vpw", vpwReturn: 0.034 } });
 assert(rv.successRate === 1, "VPW never depletes (" + (rv.successRate * 100).toFixed(0) + "%)");
+// Help claim: a higher assumed real return front-loads spending -- larger
+// first-year withdrawal AND a lower median real ending balance (spent sooner).
+var vLo = H({ spending: { strategy: "vpw", vpwReturn: 0.02 } });
+var vHi = H({ spending: { strategy: "vpw", vpwReturn: 0.05 } });
+assert(vHi.spending.firstYear > vLo.spending.firstYear && vHi.endingReal.median < vLo.endingReal.median,
+  "higher VPW assumed return front-loads spending (yr1 $" + Math.round(vLo.spending.firstYear) + "->$" + Math.round(vHi.spending.firstYear) +
+  ", medEnd $" + Math.round(vLo.endingReal.median) + "->$" + Math.round(vHi.endingReal.median) + ")");
 var rg = H({ spending: { strategy: "guyton", initial: 40000, guard: 0.2, gkAdjust: 0.1 } });
 console.log("Guyton-Klinger 4% start: success=" + (rg.successRate * 100).toFixed(1) + "%");
 assert(rg.successRate >= r.successRate, "GK guardrails >= constant success");
