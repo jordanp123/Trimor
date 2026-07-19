@@ -64,6 +64,22 @@ var vHi = H({ spending: { strategy: "vpw", vpwReturn: 0.05 } });
 assert(vHi.spending.firstYear > vLo.spending.firstYear && vHi.endingReal.median < vLo.endingReal.median,
   "higher VPW assumed return front-loads spending (yr1 $" + Math.round(vLo.spending.firstYear) + "->$" + Math.round(vHi.spending.firstYear) +
   ", medEnd $" + Math.round(vLo.endingReal.median) + "->$" + Math.round(vHi.endingReal.median) + ")");
+
+// 5b) Lowest-balance (drawdown trough) stats: each cycle's min real balance.
+// Pathwise min <= ending and <= starting value, so the aggregates must obey
+// the same dominance; a failing scenario's worst trough is exactly $0.
+assert(r.lowestReal && r.lowestReal.median <= r.endingReal.median + 1e-9,
+  "lowest-balance median <= ending median (pathwise dominance)");
+assert(r.lowestReal.max <= 1000000 + 1e-9, "no cycle's lowest exceeds the starting value");
+assert(r.lowestReal.min === 0, "the 4% baseline HAS failures, so its worst trough is exactly $0");
+var rSafe = H({ spending: { strategy: "constant", initial: 30000 } });
+assert(rSafe.successRate === 1 && rSafe.lowestReal.min > 0,
+  "an all-surviving plan's worst trough stays above $0 (min $" + Math.round(rSafe.lowestReal.min) + ")");
+if (self.SWR.mc) {
+  var mLow = self.SWR.mc.run(P(), data, { method: "bootstrap", trials: 2000, seed: 9 });
+  assert(mLow.lowestReal && mLow.lowestReal.median <= mLow.endingReal.median + 1e-9 && mLow.lowestReal.max <= 1000000 + 1e-9,
+    "Monte Carlo carries the same lowest-balance stats and invariants");
+}
 var rg = H({ spending: { strategy: "guyton", initial: 40000, guard: 0.2, gkAdjust: 0.1 } });
 console.log("Guyton-Klinger 4% start: success=" + (rg.successRate * 100).toFixed(1) + "%");
 assert(rg.successRate >= r.successRate, "GK guardrails >= constant success");

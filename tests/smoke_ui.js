@@ -11,6 +11,15 @@ A(document.getElementById("headStats").children.length >= 3,
   "headStats populated (" + document.getElementById("headStats").children.length + " cards)");
 A(document.getElementById("detailBody").children.length >= 4,
   "detailBody populated (" + document.getElementById("detailBody").children.length + " blocks)");
+// Lowest-balance block exists and sits BEFORE the case blocks (top-row slot).
+(function () {
+  function tx(n) { var s = n.textContent || ""; (n.children || []).forEach(function (c) { s += tx(c); }); return s; }
+  var t = tx(document.getElementById("detailBody"));
+  var iLow = t.indexOf("Lowest portfolio balance"), iWorst = t.indexOf("Worst case");
+  A(iLow >= 0 && t.indexOf("Typical lowest (median)") >= 0 && t.indexOf("Lowest average") >= 0,
+    "lowest-balance block renders with its three rows");
+  A(iWorst > iLow, "lowest-balance block precedes the Worst-case block (top-row placement)");
+})();
 A(document.getElementById("trajCanvas")._chart != null, "trajectory chart rendered");
 A(missing.length === 0, "no unknown element ids referenced" + (missing.length ? ": " + missing.join(", ") : ""));
 A(document.documentElement.getAttribute("data-theme") === "light" ||

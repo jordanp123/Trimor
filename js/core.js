@@ -263,6 +263,14 @@
 
     const endNom = cycles.map((c) => c.endValue).sort((a, b) => a - b);
     const endReal = cycles.map((c) => c.endValueReal).sort((a, b) => a - b);
+    // Per-cycle drawdown trough: the lowest real (today's-$) balance seen at any
+    // year boundary of the cycle, year 0 included -- a plan that only grows
+    // reports its starting value, a failed cycle reports $0.
+    const lowReal = cycles.map((c) => {
+      let m = Infinity;
+      for (let t = 0; t < c.realSeries.length; t++) if (c.realSeries[t] < m) m = c.realSeries[t];
+      return m;
+    }).sort((a, b) => a - b);
     const pctl = (arr, p) => stats.percentileSorted(arr, p);
     const bucket = (arr) => ({
       min: arr[0], p5: pctl(arr, 5), p10: pctl(arr, 10), p25: pctl(arr, 25), median: pctl(arr, 50),
@@ -369,6 +377,7 @@
       successRate: total ? succeeded / total : 0,
       endingNominal: bucket(endNom),
       endingReal: bucket(endReal),
+      lowestReal: bucket(lowReal),
       bands,
       bandsReal,
       brokeByYear,
@@ -457,7 +466,7 @@
     const z = { min: 0, p5: 0, p10: 0, p25: 0, median: 0, p75: 0, p90: 0, max: 0, mean: 0 };
     return {
       mode: "historical", years: N, total: 0, succeeded: 0, failed: 0, successRate: 0,
-      insufficient: true, endingNominal: z, endingReal: z,
+      insufficient: true, endingNominal: z, endingReal: z, lowestReal: z,
       bands: { p10: [], p25: [], median: [], p75: [], p90: [] },
       bandsReal: { p10: [], p25: [], median: [], p75: [], p90: [] },
       brokeByYear: [], spending: null, histogram: { bins: [], counts: [], min: 0, max: 0 }, sampleSeries: [], representative: null,

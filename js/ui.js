@@ -633,6 +633,16 @@
       rows.push(kv("Lifetime average", money(sp.avgMedian)));
       blocks.push(block("Annual spending · today's $", rows));
     }
+    // Drawdown trough across each cycle's whole path (today's $): how low the
+    // balance got, not just where it ended. Third block = top-row slot in the
+    // 3-across details grid; the Worst/Median/Best case blocks shift down.
+    if (s.lowestReal) {
+      blocks.push(block("Lowest portfolio balance · today's $", [
+        kv("Typical lowest (median)", money(s.lowestReal.median)),
+        kv("Lowest", money(s.lowestReal.min)),
+        kv("Lowest average", money(s.lowestReal.mean)),
+      ]));
+    }
     const rep = s.representative;
     const repBlock = (label, c) => {
       const rows = [];
@@ -915,6 +925,7 @@
     rptKV(sec, "Ending balance, real (median)", money(s.endingReal.median));
     rptKV(sec, "Ending balance, real (10th–90th pctl)", money(s.endingReal.p10) + " – " + money(s.endingReal.p90));
     rptKV(sec, "Ending balance, real (worst)", money(s.endingReal.min));
+    if (s.lowestReal) rptKV(sec, "Lowest balance along the way, real (typical / worst)", money(s.lowestReal.median) + " / " + money(s.lowestReal.min));
     const sp = s.spending;
     if (sp) {
       rptKV(sec, "First-year spending", sp.firstYearMax > sp.firstYearMin + 0.5
