@@ -17,8 +17,9 @@
   --chart-axis: #9aa6bd;
   --chart-grid: rgba(140, 150, 170, 0.16);
   --chart-text: #6b7689;
-  --chart-band: rgba(47, 111, 237, 0.12);
-  --chart-band2: rgba(47, 111, 237, 0.24);
+  --chart-band: rgba(47, 111, 237, 0.20);
+  --chart-band2: rgba(47, 111, 237, 0.42);
+  --chart-band-edge: rgba(47, 111, 237, 0.55);
   --chart-median: #2f6fed;
   --chart-worst: #e2483d;
   --chart-best: #15a06a;
@@ -41,8 +42,9 @@
   --chart-axis: #6b7689;
   --chart-grid: rgba(150, 165, 195, 0.13);
   --chart-text: #8b97ad;
-  --chart-band: rgba(79, 134, 255, 0.14);
-  --chart-band2: rgba(79, 134, 255, 0.30);
+  --chart-band: rgba(79, 134, 255, 0.20);
+  --chart-band2: rgba(79, 134, 255, 0.44);
+  --chart-band-edge: rgba(120, 165, 255, 0.6);
   --chart-spag: rgba(150, 165, 195, 0.14);
   --chart-bar: #4f86ff;
   --chart-tip-bg: #f3f5fa;

@@ -24,12 +24,13 @@
       axis: g("--chart-axis", "#94a0b8"),
       grid: g("--chart-grid", "rgba(140,150,170,0.16)"),
       text: g("--chart-text", "#62708a"),
-      band: g("--chart-band", "rgba(47,111,237,0.13)"),
-      band2: g("--chart-band2", "rgba(47,111,237,0.24)"),
+      band: g("--chart-band", "rgba(47,111,237,0.20)"),
+      band2: g("--chart-band2", "rgba(47,111,237,0.40)"),
+      bandEdge: g("--chart-band-edge", "rgba(47,111,237,0.55)"),
       median: g("--chart-median", "#2f6fed"),
       worst: g("--chart-worst", "#e2483d"),
       best: g("--chart-best", "#15a06a"),
-      spag: g("--chart-spag", "rgba(120,132,156,0.16)"),
+      spag: g("--chart-spag", "rgba(120,132,156,0.10)"),
       bar: g("--chart-bar", "#5b8def"),
       dead: g("--chart-dead", "#8a93a6"),
       tipbg: g("--chart-tip-bg", "#1c2230"),
@@ -136,14 +137,21 @@
     ctx.fillStyle = pal.text;
     xTicks(ctx, N, plotW, X, h - mB + 7, w, (t) => "Yr " + t);
 
-    // Percentile fan.
-    fillBand(ctx, X, Y, b.p10, b.p90, pal.band);
-    fillBand(ctx, X, Y, b.p25, b.p75, pal.band2);
-
-    // Faint sample trajectories.
+    // Faint sample trajectories FIRST, as background texture -- the percentile
+    // bands are then painted over them so the fan reads as clean nested regions
+    // instead of being buried under the spaghetti (the old order was unreadable).
     const ser = (s) => (real && s.realSeries) ? s.realSeries : s.series;
     ctx.strokeStyle = pal.spag; ctx.lineWidth = 1;
     for (const s of summary.sampleSeries) if (!s.role) polyline(ctx, X, Y, ser(s));
+
+    // Percentile fan: translucent 10-90 halo, denser 25-75 core on top, each
+    // with a thin boundary stroke so the two tiers separate crisply.
+    fillBand(ctx, X, Y, b.p10, b.p90, pal.band);
+    fillBand(ctx, X, Y, b.p25, b.p75, pal.band2);
+    ctx.strokeStyle = pal.bandEdge; ctx.lineWidth = 1;
+    polyline(ctx, X, Y, b.p10); polyline(ctx, X, Y, b.p90);
+    polyline(ctx, X, Y, b.p25); polyline(ctx, X, Y, b.p75);
+
     // Worst / best highlighted cycles.
     for (const s of summary.sampleSeries) {
       if (s.role === "worst") { ctx.strokeStyle = pal.worst; ctx.lineWidth = 1.75; polyline(ctx, X, Y, ser(s)); }
