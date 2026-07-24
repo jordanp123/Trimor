@@ -1,0 +1,16 @@
+# Builds the site image from the assembled webroot, the same way
+# `docker compose build` does. Requires Podman 5.0+ (.build units); on older
+# Podman delete this file and build by hand instead -- see README.md:
+#   podman build --build-arg SUBPATH=webswr -t localhost/webswr:latest ~/webswr
+#
+# EDIT IF YOUR LAYOUT DIFFERS: %h is your home directory in a rootless unit
+# (and /root in a rootful one), so the stock /root/webswr or ~/webswr layout
+# needs no change here. BuildArg SUBPATH must match config.webswr's SUBPATH.
+[Unit]
+Description=Build the WebSWR site image
+
+[Build]
+ImageTag=localhost/webswr:latest
+File=%h/webswr/Dockerfile
+SetWorkingDirectory=%h/webswr
+BuildArg=SUBPATH=webswr

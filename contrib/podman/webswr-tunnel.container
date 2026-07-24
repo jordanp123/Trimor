@@ -1,0 +1,35 @@
+# Cloudflare tunnel sidecar. Joins BOTH networks: backend (to reach nginx) and
+# egress (to reach the Cloudflare edge). nginx itself never touches egress.
+# EDIT: ContainerName / User / Group to match config.webswr (STACK_NAME, TUNNEL_UID).
+[Unit]
+Description=Cloudflare tunnel for WebSWR
+After=network-online.target webswr.service
+Wants=network-online.target
+
+[Container]
+ContainerName=cloudflared-tunnel-WebSWR
+Image=docker.io/cloudflare/cloudflared:latest
+Exec=tunnel run
+# TUNNEL_TOKEN lives in the same .env the compose deployment uses (KEY=value,
+# root/owner-only, chmod 600). Never put the token in this unit file.
+EnvironmentFile=%h/webswr/.env
+Network=webswr-backend.network
+Network=webswr-egress.network
+# Keeps the tunnel image patched: `systemctl --user enable --now
+# podman-auto-update.timer` pulls newer digests and restarts on its own.
+AutoUpdate=registry
+
+# --- hardening (1:1 with the compose service) ---
+User=17000
+Group=17000
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=ALL
+PodmanArgs=--memory=256m --pids-limit=4096 --cpu-shares=768
+
+[Service]
+Restart=always
+TimeoutStartSec=900
+
+[Install]
+WantedBy=default.target

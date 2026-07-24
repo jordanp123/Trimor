@@ -1,0 +1,40 @@
+# WebSWR static site (nginx-unprivileged), hardened to match docker-compose.yaml.
+# EDIT: ContainerName / User / Group to match config.webswr (STACK_NAME, APP_UID).
+[Unit]
+Description=WebSWR static site
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+ContainerName=WebSWR
+# Refers to webswr.build (Podman 5.0+). On older Podman, replace this with
+# Image=localhost/webswr:latest and build the image yourself -- see README.md.
+Image=webswr.build
+Network=webswr-backend.network
+# Compose also resolved this container as "website" (the service name); keep
+# that alias so an existing tunnel ingress rule pointing at http://website:8080
+# keeps working. See the DNS note in README.md.
+NetworkAlias=website
+
+# --- hardening (1:1 with the compose service) ---
+User=17001
+Group=17001
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=ALL
+Tmpfs=/tmp:rw,noexec,nosuid,nodev,size=256M
+Tmpfs=/run:rw,noexec,nosuid,nodev,size=64M
+Tmpfs=/var/cache/nginx:rw,noexec,nosuid,nodev,size=256M
+# Resource limits (compose `deploy.resources.limits`). Quadlet has no native
+# keys for these, so they go through the PodmanArgs catch-all. Rootless --cpus
+# needs cgroups v2 delegation (default on modern systemd distros).
+PodmanArgs=--memory=256m --pids-limit=512 --cpus=1
+
+[Service]
+# compose `restart: unless-stopped`
+Restart=always
+# A cold first start may build the image; don't let systemd time it out.
+TimeoutStartSec=900
+
+[Install]
+WantedBy=default.target

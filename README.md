@@ -69,6 +69,11 @@ container behind a `cloudflared` tunnel, refreshed daily by `update.sh` (git pul
 `config.webswr` is gitignored and sits in the webroot next to `.env`, so the
 nightly update can never overwrite your settings. It contains no secrets.
 
+**Podman?** [`contrib/podman/`](contrib/podman/) has the same stack as rootless
+systemd [Quadlet](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html)
+units — identical hardening, plus the daily update job no longer needs to run as
+root. (`podman compose up -d` on the compose file usually works too.)
+
 ## Tests
 
 All tests run headlessly via macOS **JavaScriptCore** (`osascript`) — no Node, no

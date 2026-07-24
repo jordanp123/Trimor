@@ -1,0 +1,9 @@
+# Internal-only network: the nginx container can answer the tunnel but has NO
+# route to the internet at all (it is a static file server -- zero egress need).
+# Mirrors `networks: backend: {internal: true}` in docker-compose.yaml.
+[Unit]
+Description=WebSWR internal network (no egress)
+
+[Network]
+NetworkName=webswr-backend
+Internal=true
