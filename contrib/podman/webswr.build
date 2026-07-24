@@ -1,7 +1,7 @@
 # Builds the site image from the assembled webroot, the same way
-# `docker compose build` does. Requires Podman 5.0+ (.build units); on older
-# Podman delete this file and build by hand instead -- see README.md:
-#   podman build --build-arg SUBPATH=webswr -t localhost/webswr:latest ~/webswr
+# `docker compose build` does, so a cold `systemctl --user start webswr.service`
+# works without a manual build. The daily update.sh rebuilds this same tag
+# directly (the data files change every morning) -- see README.md.
 #
 # EDIT IF YOUR LAYOUT DIFFERS: %h is your home directory in a rootless unit
 # (and /root in a rootful one), so the stock /root/webswr or ~/webswr layout

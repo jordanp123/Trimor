@@ -7,8 +7,8 @@ Wants=network-online.target
 
 [Container]
 ContainerName=WebSWR
-# Refers to webswr.build (Podman 5.0+). On older Podman, replace this with
-# Image=localhost/webswr:latest and build the image yourself -- see README.md.
+# Refers to webswr.build, which tags localhost/webswr:latest. The daily
+# update.sh rebuilds that tag directly, so a restart picks up the new image.
 Image=webswr.build
 Network=webswr-backend.network
 # Compose also resolved this container as "website" (the service name); keep

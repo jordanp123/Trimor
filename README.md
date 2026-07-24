@@ -71,8 +71,11 @@ nightly update can never overwrite your settings. It contains no secrets.
 
 **Podman?** [`contrib/podman/`](contrib/podman/) has the same stack as rootless
 systemd [Quadlet](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html)
-units — identical hardening, plus the daily update job no longer needs to run as
-root. (`podman compose up -d` on the compose file usually works too.)
+units (Podman 5+) with a rootless `update.sh` — identical hardening, plus the
+daily update job no longer needs to run as root. It includes a **step-by-step
+guide for converting an existing Docker deployment**, which runs both stacks
+side by side so the cutover has no downtime and rolls back with one command.
+(`podman compose up -d` on the compose file usually works too.)
 
 ## Tests
 
