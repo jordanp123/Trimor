@@ -6,9 +6,12 @@ units: containers become real user services with boot ordering,
 restart-on-failure, journald logs and a daily auto-update timer. `install.sh`
 does the wiring.
 
-The repo root also ships a Docker Compose deployment (`docker-compose.yaml` +
-`update.sh`). **This directory is the Podman path** — you want one or the other,
-not both running at once.
+The repo root also ships an equivalent Docker Compose deployment
+(`docker-compose.yaml` + `update.sh`). **This directory is the Podman path** —
+you want one or the other, not both running at once.
+
+**Changing either deployment?** Change both. `tests/deploy_parity.py` compares
+them on every run of the test suite and fails if they drift.
 
 **Why rootless:** the container hardening is identical either way (read-only
 rootfs, all capabilities dropped, no-new-privileges, non-root user,
@@ -21,11 +24,11 @@ tunnel dials out), so there is no bind-below-1024 problem.
 Requires **Podman 5+**, cgroups v2, and a subuid range covering your `APP_UID`
 (the default 65536-wide range in `/etc/subuid` covers the stock 17001).
 
-> **Status: contributed, not battle-tested.** The maintained deployment is the
-> Docker one. These files mirror it directive-for-directive, and both scripts
-> were dry-run end to end with `podman`/`systemctl` stubbed — but the real
-> podman path has not been exercised in CI. Please open an issue if something
-> needs adjusting.
+> **Status: this is what the project's own server runs.** The Docker Compose
+> deployment is maintained alongside it and the two are held in lockstep by
+> `tests/deploy_parity.py` (part of `sh tests/run.sh`), which fails the suite if
+> a hardening flag, UID, limit, network rule or deploy-script invariant lands in
+> one and not the other.
 
 ## Layout
 

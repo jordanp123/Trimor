@@ -30,6 +30,11 @@ runbundle "security (hostile hash + input caps)" \
   "$DIR/js/core.js" "$DIR/js/montecarlo.js" "$DIR/js/mortality.js" "$DIR/js/amortize.js" "$DIR/js/compound.js" "$DIR/js/charts.js" "$DIR/js/qrcode.js" \
   "$DIR/js/ui.js" "$DIR/tests/security_test.js"
 
+# Deployment parity: the Docker and Podman stacks must stay equivalent.
+echo "== deployment parity (docker compose vs podman quadlets) =="
+if python3 "$DIR/tests/deploy_parity.py"; then :; else fail=1; fi
+echo ""
+
 # Guard: every runtime module must actually be referenced by index.html. (The
 # headless bundles load them regardless, so only this catches a missing <script>.)
 echo "== index.html references all runtime scripts =="

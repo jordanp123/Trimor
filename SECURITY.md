@@ -125,9 +125,12 @@ renders bogus results. Run it with `sh tests/run.sh`.
 
 Deployment settings live in `config.webswr` (server-local, gitignored — see
 `config.webswr.example`). It holds **no secrets**: paths, container UIDs/names
-and the URL path only. The single secret, the Cloudflare `TUNNEL_TOKEN`, stays
-in `.env` (root-owned, `chmod 600`), which the update script re-asserts on
-every run.
+and the URL path only. The single secret is the Cloudflare `TUNNEL_TOKEN`: the
+rootless Podman deployment (`deploy/`, what this project's server runs) keeps it
+in a **podman secret**, outside the deploy directory entirely; the Docker
+deployment keeps it in `.env` (root-owned, `chmod 600`), which the update script
+re-asserts on every run. Both stacks apply identical container hardening, and
+`tests/deploy_parity.py` fails the suite if they drift apart.
 
 The app is safe opened directly, but when hosting it, also send these as **HTTP
 response headers** (a header CSP is stronger than the `<meta>` fallback, and

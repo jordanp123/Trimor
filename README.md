@@ -49,12 +49,26 @@ and the solver automatically run on the main thread instead.
 
 There is **no build step** — the scripts are plain classic `<script>` files.
 
-## Host it yourself (Docker + Cloudflare tunnel)
+## Host it yourself
 
-The repo ships the production deployment: a hardened `nginxinc/nginx-unprivileged`
-container behind a `cloudflared` tunnel, refreshed daily by `update.sh` (git pull
-→ regenerate market/CAPE data → rebuild → restart). Every deploy-specific value
-(repo URL, checkout dir, container UIDs/names, URL path) lives in **one file**:
+The repo ships the production deployment two equivalent ways — a hardened
+`nginxinc/nginx-unprivileged` container behind a `cloudflared` tunnel, refreshed
+daily (git pull → regenerate market/CAPE data → rebuild → restart):
+
+- **[`deploy/`](deploy/) — rootless Podman + systemd Quadlets.** What this
+  project's own server runs: no root-owned daemon, the daily job runs
+  unprivileged, and the tunnel token lives in a podman secret. One command to
+  set up: `./deploy/install.sh`.
+- **Docker Compose** (below) — `docker-compose.yaml` + `update.sh`.
+
+Both read the same `config.webswr`, and `tests/deploy_parity.py` fails the test
+suite if their hardening, UIDs, limits, network rules or deploy-script
+invariants ever drift apart.
+
+### Docker Compose
+
+Every deploy-specific value (repo URL, checkout dir, container UIDs/names, URL
+path) lives in **one file**:
 
 1. `mkdir -p /root/webswr && cd /root/webswr` (any base directory works)
 2. Copy [`config.webswr.example`](config.webswr.example) to `config.webswr` and edit it
@@ -69,14 +83,10 @@ container behind a `cloudflared` tunnel, refreshed daily by `update.sh` (git pul
 `config.webswr` is gitignored and sits in the webroot next to `.env`, so the
 nightly update can never overwrite your settings. It contains no secrets.
 
-**Podman?** [`deploy/`](deploy/) has the same stack as rootless systemd
-[Quadlet](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html)
-units (Podman 5+) — identical hardening, plus the daily update job no longer
-runs as root and the tunnel token moves into a podman secret. Run
-`./deploy/install.sh` and follow the steps it prints; it reads the same
-`config.webswr`. It also documents **converting an existing Docker deployment**,
-running both stacks side by side so the cutover has no downtime and rolls back
-with one command. (`podman compose up -d` on the compose file usually works too.)
+See [`deploy/`](deploy/) for the Podman path, including a step-by-step guide for
+**converting an existing Docker deployment** — it runs both stacks side by side
+so the cutover has no downtime and rolls back with one command.
+(`podman compose up -d` on the compose file usually works too.)
 
 ## Tests
 
