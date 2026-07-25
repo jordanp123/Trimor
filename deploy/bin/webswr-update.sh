@@ -1,33 +1,41 @@
 #!/bin/bash
 # WebSWR daily deploy -- ROOTLESS PODMAN variant of the repo-root update.sh.
-# Run it as the unprivileged deploy user (never as root), from a systemd user
-# timer or that user's crontab. Requires Podman 5+ and the quadlet units from
-# this directory installed in ~/.config/containers/systemd/.
+# Installed to ~/.local/bin by deploy/install.sh and driven by
+# webswr-update.timer. Run it as the unprivileged deploy user, never as root.
+# Requires Podman 5+ and the quadlet units from deploy/quadlet/ installed.
+#
+# Where is the webroot? $WEBSWR_BASE (which webswr-update.service sets from
+# whatever path install.sh detected), else ~/webswr. The webroot holds
+# config.webswr and the assembled site; the git checkout lives inside it. If
+# your webroot is NOT ~/webswr, invoke it by hand as:
+#   WEBSWR_BASE=/path/to/webroot webswr-update.sh
+# (timer runs need nothing extra -- the unit carries the path.)
 #
 # Same failsafe ordering as the Docker script: pull before touching the webroot,
 # build the new image before pruning anything -- any failure aborts (set -e) and
-# the running containers keep serving last-known-good. The braces make bash
-# parse the whole file before executing any of it, so the cp below replacing
-# this script mid-run can't corrupt this run.
+# the running containers keep serving last-known-good. If the new image starts
+# but the container fails to come up, the previous image is restored. The braces
+# make bash parse the whole file before executing any of it, so the cp below
+# replacing this script mid-run can't corrupt this run.
 #
 # Differences from the Docker variant, all consequences of being rootless:
 #   * no setpriv privilege drop and no chowns -- the whole script already runs
 #     unprivileged, and an unprivileged user cannot switch UIDs anyway. The
 #     fetchers keep their throwaway staging dir and symlink-guarded copy-back.
-#   * FETCH_UID / APP_UID / TUNNEL_UID / STACK_NAME are not read here: quadlet
-#     files are systemd units and do not expand ${VAR}, so those values live
-#     literally in the .container units next to this file.
+#   * APP_UID / TUNNEL_UID / STACK_NAME are not read here: quadlet files are
+#     systemd units and do not expand ${VAR}, so deploy/install.sh writes those
+#     values into the units once, from the same config.webswr.
 #   * `docker compose up -d` becomes `podman build` + `systemctl --user restart`.
 {
 set -eEu
 
-# Unit names, matching the quadlet filenames shipped in this directory.
-# Rename here too if you rename those files.
-SITE_UNIT="webswr.service"
-TUNNEL_UNIT="webswr-tunnel.service"
-IMAGE_TAG="localhost/webswr:latest"
+# Unit names, matching the quadlet filenames in deploy/quadlet/.
+SITE_UNIT="webswr-website.service"
+TUNNEL_UNIT="webswr-cloudflared.service"
+IMAGE_TAG="localhost/webswr-website:latest"
+ROLLBACK_TAG="localhost/webswr-website:previous"
 TUNNEL_IMAGE="docker.io/cloudflare/cloudflared:latest"
-# Podman secret holding the Cloudflare tunnel token (see webswr-tunnel.container).
+# Podman secret holding the Cloudflare tunnel token (see the cloudflared unit).
 SECRET_NAME="webswr-tunnel-token"
 
 if [ "$(id -u)" = "0" ]; then
@@ -54,18 +62,16 @@ podman secret inspect "$SECRET_NAME" >/dev/null 2>&1 || {
   exit 1
 }
 
-SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
-# Parent-of-parent first: this script ships inside the checkout at
-# <webroot>/<checkout>/contrib/podman/, so the webroot is three levels up when
-# cron runs the checkout's copy; a copy placed directly in the webroot works too.
-if [ -f "$SELF_DIR/../../../config.webswr" ]; then BASE="$(cd "$SELF_DIR/../../.." && pwd)";
-elif [ -f "$SELF_DIR/config.webswr" ]; then BASE="$SELF_DIR";
-else
-  echo "FATAL: config.webswr not found above $SELF_DIR." >&2
-  echo "Copy config.webswr.example to the webroot as config.webswr and edit it" >&2
-  echo "(it sits NEXT TO .env, above the git checkout). Nothing was changed." >&2
+# webswr-update.service sets WEBSWR_BASE; ~/webswr is the standard layout.
+BASE="${WEBSWR_BASE:-$HOME/webswr}"
+[ -d "$BASE" ] || { echo "FATAL: webroot $BASE does not exist (set WEBSWR_BASE)" >&2; exit 1; }
+BASE="$(cd "$BASE" && pwd)"
+[ -f "$BASE/config.webswr" ] || {
+  echo "FATAL: no config.webswr in $BASE." >&2
+  echo "Copy config.webswr.example there and edit it, or point WEBSWR_BASE at" >&2
+  echo "the right webroot. Nothing was changed." >&2
   exit 1
-fi
+}
 
 # config.webswr is parsed as DATA, never sourced -- a config file should not be
 # able to execute code, and a malformed line gets a clear FATAL instead of bash
@@ -152,9 +158,25 @@ if [ -f "$BASE/.env" ]; then chmod 600 "$BASE/.env"; fi
 # cached base would never update again: no CVE fixes). daemon-reload picks up
 # any quadlet edits that arrived with this morning's git pull.
 podman pull "$TUNNEL_IMAGE"
+# Keep the currently-deployed image so a bad build can be rolled back. (Ignore
+# failure: on the very first run there is nothing to tag yet.)
+podman tag "$IMAGE_TAG" "$ROLLBACK_TAG" 2>/dev/null || true
 podman build --pull --build-arg SUBPATH="$SUBPATH" -t "$IMAGE_TAG" "$BASE"
 systemctl --user daemon-reload
-systemctl --user restart "$SITE_UNIT" "$TUNNEL_UNIT"
+
+# If the new image builds but the container won't come up, put the previous
+# image back rather than leaving the site down until someone notices.
+if ! systemctl --user restart "$SITE_UNIT"; then
+  echo "!! $SITE_UNIT failed to start on the new image" >&2
+  if podman image exists "$ROLLBACK_TAG"; then
+    echo "!! rolling back to the previous image" >&2
+    podman tag "$ROLLBACK_TAG" "$IMAGE_TAG"
+    systemctl --user restart "$SITE_UNIT" || true
+  fi
+  systemctl --user --no-pager --lines=20 status "$SITE_UNIT" >&2 || true
+  exit 1
+fi
+systemctl --user restart "$TUNNEL_UNIT"
 
 # Forensic record: what exactly is deployed right now (git commit + image ids).
 # With the start/OK banners this makes the log a verifiable timeline of every

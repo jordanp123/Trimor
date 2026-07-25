@@ -1,5 +1,6 @@
 # WebSWR static site (nginx-unprivileged), hardened to match docker-compose.yaml.
-# EDIT: ContainerName / User / Group to match config.webswr (STACK_NAME, APP_UID).
+# deploy/install.sh rewrites ContainerName / User / Group from config.webswr --
+# nothing here needs hand-editing if you install with that script.
 [Unit]
 Description=WebSWR static site
 After=network-online.target
@@ -7,9 +8,9 @@ Wants=network-online.target
 
 [Container]
 ContainerName=WebSWR
-# Refers to webswr.build, which tags localhost/webswr:latest. The daily
-# update.sh rebuilds that tag directly, so a restart picks up the new image.
-Image=webswr.build
+# Refers to webswr-website.build, which tags localhost/webswr-website:latest.
+# webswr-update.sh rebuilds that tag, so a restart picks up the new image.
+Image=webswr-website.build
 Network=webswr-backend.network
 # Compose also resolved this container as "website" (the service name); keep
 # that alias so an existing tunnel ingress rule pointing at http://website:8080

@@ -1,0 +1,19 @@
+# Daily refresh: git pull, regenerate market/CAPE data, rebuild, restart.
+# Driven by webswr-update.timer. Run it by hand any time with:
+#   systemctl --user start webswr-update.service
+# and watch it with:
+#   journalctl --user -u webswr-update -f
+#
+# deploy/install.sh rewrites %h/webswr to your actual webroot.
+[Unit]
+Description=WebSWR daily update (pull, fetch data, rebuild, restart)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# The updater reads this instead of guessing where the webroot is.
+Environment=WEBSWR_BASE=%h/webswr
+ExecStart=%h/.local/bin/webswr-update.sh
+# Data fetches plus an image build; generous but not unbounded.
+TimeoutStartSec=1800

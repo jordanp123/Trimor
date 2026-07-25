@@ -1,16 +1,17 @@
-# Builds the site image from the assembled webroot, the same way
-# `docker compose build` does, so a cold `systemctl --user start webswr.service`
-# works without a manual build. The daily update.sh rebuilds this same tag
-# directly (the data files change every morning) -- see README.md.
+# Builds the site image from the assembled WEBROOT, so a cold
+# `systemctl --user start webswr-website.service` works without a manual build.
+# The daily webswr-update.sh rebuilds this same tag with --pull (base-image
+# freshness), so day to day this unit is only the cold-start path.
 #
-# EDIT IF YOUR LAYOUT DIFFERS: %h is your home directory in a rootless unit
-# (and /root in a rootful one), so the stock /root/webswr or ~/webswr layout
-# needs no change here. BuildArg SUBPATH must match config.webswr's SUBPATH.
+# NOTE the build context is the webroot -- the assembled site -- NOT the git
+# checkout, which lives inside it. deploy/install.sh rewrites %h/webswr to your
+# actual webroot and BuildArg SUBPATH from config.webswr, so nothing here needs
+# hand-editing if you install with that script.
 [Unit]
 Description=Build the WebSWR site image
 
 [Build]
-ImageTag=localhost/webswr:latest
+ImageTag=localhost/webswr-website:latest
 File=%h/webswr/Dockerfile
 SetWorkingDirectory=%h/webswr
 BuildArg=SUBPATH=webswr

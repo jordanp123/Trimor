@@ -1,9 +1,9 @@
 # Cloudflare tunnel sidecar. Joins BOTH networks: backend (to reach nginx) and
 # egress (to reach the Cloudflare edge). nginx itself never touches egress.
-# EDIT: ContainerName / User / Group to match config.webswr (STACK_NAME, TUNNEL_UID).
+# deploy/install.sh rewrites ContainerName / User / Group from config.webswr.
 [Unit]
 Description=Cloudflare tunnel for WebSWR
-After=network-online.target webswr.service
+After=network-online.target webswr-website.service
 Wants=network-online.target
 
 [Container]
@@ -19,8 +19,10 @@ Exec=tunnel run
 Secret=webswr-tunnel-token,type=env,target=TUNNEL_TOKEN
 Network=webswr-backend.network
 Network=webswr-egress.network
-# Keeps the tunnel image patched: `systemctl --user enable --now
-# podman-auto-update.timer` pulls newer digests and restarts on its own.
+# Marks the image eligible for `podman auto-update`, which webswr-update.timer
+# does NOT run -- webswr-update.sh pulls this image explicitly every night. The
+# label only matters if you also enable podman's own podman-auto-update.timer
+# (shipped disabled) to cover every container on the host.
 AutoUpdate=registry
 
 # --- hardening (1:1 with the compose service) ---

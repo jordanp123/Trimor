@@ -1,0 +1,18 @@
+# Runs webswr-update.service daily. Enable with:
+#   systemctl --user enable --now webswr-update.timer
+# Check the schedule with:
+#   systemctl --user list-timers webswr-update.timer
+[Unit]
+Description=Daily WebSWR update
+
+[Timer]
+OnCalendar=*-*-* 05:00:00
+# Spread the load so every host running this doesn't hit the upstream data
+# sources at the same second.
+RandomizedDelaySec=900
+# If the machine was off at 05:00, run once it comes back rather than skipping
+# a day (which would leave the site serving stale market data).
+Persistent=true
+
+[Install]
+WantedBy=timers.target
