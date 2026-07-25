@@ -10,9 +10,13 @@ Wants=network-online.target
 ContainerName=cloudflared-tunnel-WebSWR
 Image=docker.io/cloudflare/cloudflared:latest
 Exec=tunnel run
-# TUNNEL_TOKEN lives in the same .env the compose deployment uses (KEY=value,
-# root/owner-only, chmod 600). Never put the token in this unit file.
-EnvironmentFile=%h/webswr/.env
+# The tunnel token comes from a podman secret, NOT from a file in the deploy
+# directory -- so it is never in the webroot, the build context, a backup of
+# either, or this unit. Podman injects it as TUNNEL_TOKEN at container start,
+# which is the variable cloudflared already reads. Create it once with:
+#   printf '%s' 'YOUR-TOKEN' | podman secret create webswr-tunnel-token -
+# (printf, not echo -- a trailing newline would corrupt the token.)
+Secret=webswr-tunnel-token,type=env,target=TUNNEL_TOKEN
 Network=webswr-backend.network
 Network=webswr-egress.network
 # Keeps the tunnel image patched: `systemctl --user enable --now

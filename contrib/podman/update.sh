@@ -27,6 +27,8 @@ SITE_UNIT="webswr.service"
 TUNNEL_UNIT="webswr-tunnel.service"
 IMAGE_TAG="localhost/webswr:latest"
 TUNNEL_IMAGE="docker.io/cloudflare/cloudflared:latest"
+# Podman secret holding the Cloudflare tunnel token (see webswr-tunnel.container).
+SECRET_NAME="webswr-tunnel-token"
 
 if [ "$(id -u)" = "0" ]; then
   echo "FATAL: this is the ROOTLESS variant -- run it as the unprivileged deploy" >&2
@@ -42,6 +44,13 @@ export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNT
 systemctl --user show-environment >/dev/null 2>&1 || {
   echo "FATAL: cannot reach the systemd user manager. Is lingering enabled?" >&2
   echo "  loginctl enable-linger $(id -un)   # as root, once" >&2
+  exit 1
+}
+# Fail here rather than letting the tunnel container fail to start later.
+podman secret inspect "$SECRET_NAME" >/dev/null 2>&1 || {
+  echo "FATAL: podman secret '$SECRET_NAME' does not exist. Create it with:" >&2
+  echo "  printf '%s' 'YOUR-TUNNEL-TOKEN' | podman secret create $SECRET_NAME -" >&2
+  echo "(printf, not echo -- a trailing newline would corrupt the token.)" >&2
   exit 1
 }
 
@@ -132,7 +141,10 @@ for f in js/market-data.js js/cape-data.js data/market-data.json; do
   cp "$FETCHDIR/$f" "$BASE/$f"
 done
 
-chmod 600 "$BASE/.env"
+# The tunnel token lives in a podman secret, so .env is not required here. Keep
+# a leftover one locked down anyway (an `if` -- not `&&` -- so a missing file
+# doesn't trip set -e).
+if [ -f "$BASE/.env" ]; then chmod 600 "$BASE/.env"; fi
 
 # Refresh images and rebuild on the freshly-pulled base while the old
 # containers keep serving; a failed pull/build aborts here (set -e) with the

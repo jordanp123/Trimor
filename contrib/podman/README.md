@@ -42,7 +42,8 @@ mirror the matching values here (`STACK_NAME` → `ContainerName=`,
 Quadlet files are systemd units, so they do **not** expand `${VAR}` the way
 compose does — the values are literal. `update.sh` still reads `config.webswr`
 for `REPO_URL`, `CHECKOUT_DIR` and `SUBPATH`; `FETCH_UID` goes unused (rootless
-has no privilege left to drop).
+has no privilege left to drop). There is no `.env` in this deployment — the
+tunnel token is a podman secret (see below).
 
 ## Fresh install
 
@@ -50,13 +51,16 @@ Prerequisites: a subuid range covering your `APP_UID` — the default 65536-wide
 range in `/etc/subuid` covers the stock 17001 fine (`grep "^$USER:" /etc/subuid`).
 
 ```sh
-# 1. Assemble the webroot in $HOME: ~/webswr holds the site files, .env
-#    (TUNNEL_TOKEN, chmod 600) and config.webswr; ~/webswr/Trimor is the git
-#    checkout. The main README covers config.webswr and the tunnel token.
+# 1. Assemble the webroot in $HOME: ~/webswr holds the site files and
+#    config.webswr; ~/webswr/Trimor is the git checkout. Unlike the Docker
+#    deployment there is no .env here -- the tunnel token is a podman secret.
 mkdir -p ~/webswr && cd ~/webswr
 git clone https://github.com/jordanp123/Trimor.git
 cp Trimor/config.webswr.example config.webswr   # edit if you want non-stock values
-printf 'TUNNEL_TOKEN=...\n' > .env && chmod 600 .env
+
+# 1b. Store the tunnel token as a podman secret (printf, NOT echo -- a trailing
+#     newline would corrupt the token). See "The tunnel token" below.
+printf '%s' 'YOUR-TUNNEL-TOKEN' | podman secret create webswr-tunnel-token -
 
 # 2. Install the units
 mkdir -p ~/.config/containers/systemd
@@ -96,11 +100,19 @@ sudo chown -R webswr:webswr /home/webswr/webswr
 sudo -u webswr chmod 600 /home/webswr/webswr/.env
 ```
 
-**3. As the new user, install the units and start the stack.** Docker keeps
-serving throughout; traffic simply splits between the two connectors.
+**3. As the new user, move the token into a podman secret and start the stack.**
+Docker keeps serving throughout; traffic simply splits between the two connectors.
 
 ```sh
 sudo -iu webswr
+
+# Token: read it out of the copied .env and hand it to podman. tr strips the
+# trailing newline -- cloudflared rejects a token with one appended.
+sed -n 's/^TUNNEL_TOKEN=//p' ~/webswr/.env | tr -d '\r\n' \
+  | podman secret create webswr-tunnel-token -
+podman secret ls          # confirm it exists
+shred -u ~/webswr/.env    # the podman stack no longer reads it (see note below)
+
 mkdir -p ~/.config/containers/systemd
 cp ~/webswr/Trimor/contrib/podman/*.build \
    ~/webswr/Trimor/contrib/podman/*.container \
@@ -108,6 +120,10 @@ cp ~/webswr/Trimor/contrib/podman/*.build \
 bash ~/webswr/Trimor/contrib/podman/update.sh
 journalctl --user -u webswr-tunnel.service -n 30   # expect a second connector to register
 ```
+
+Hold off on `shred` until after step 4 if you want the Docker rollback to stay
+one command — that copy of `.env` is only used by the Podman stack once the
+secret exists, and `/root/webswr/.env` (the Docker one) is untouched either way.
 
 **4. Prove the Podman side is really serving** by stopping Docker briefly:
 
@@ -165,6 +181,41 @@ systemctl --user enable --now webswr-update.timer
 
 A plain user crontab works too — `update.sh` sets `XDG_RUNTIME_DIR` itself when
 cron hasn't, which is the usual reason `systemctl --user` fails from cron.
+
+## The tunnel token
+
+The Docker deployment keeps the token in `.env` (chmod 600) and lets compose
+interpolate it. The Podman units instead read a **podman secret**, injected as
+`TUNNEL_TOKEN` at container start — the same variable cloudflared already reads,
+so nothing about its consumption changes.
+
+What this actually buys, stated honestly:
+
+- The token **leaves the deploy directory**. It is no longer in the webroot, the
+  build context, a `tar`/`rsync`/backup of either, or in any unit file — the
+  realistic ways a secret in a project directory escapes.
+- Rotation and inventory become managed operations (`podman secret ls`,
+  `inspect`, `rm`), instead of hand-editing a dotfile.
+- `update.sh` fails fast with instructions if the secret is missing, rather than
+  letting the tunnel container fail to start later.
+
+What it does **not** buy: podman's default secret driver stores secrets
+base64-encoded in the user's container storage — **not encrypted**. Anyone who
+can read that user's files (or is root) can still recover the token. This is
+better scoping and hygiene, not encryption at rest. For real at-rest protection
+you would point podman at an external driver (e.g. `pass` or a KMS).
+
+**Rotation** — after issuing a new token in the Cloudflare dashboard:
+
+```sh
+podman secret rm webswr-tunnel-token
+printf '%s' 'NEW-TOKEN' | podman secret create webswr-tunnel-token -
+systemctl --user restart webswr-tunnel.service
+journalctl --user -u webswr-tunnel.service -n 20   # confirm the connector registers
+```
+
+Always `printf '%s'`, never `echo`: a trailing newline gets stored verbatim and
+cloudflared will reject the token with a confusing auth error.
 
 ## Gotchas
 
