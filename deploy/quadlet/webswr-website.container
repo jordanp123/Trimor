@@ -23,6 +23,13 @@ Group=17001
 ReadOnly=true
 NoNewPrivileges=true
 DropCapability=ALL
+
+# Using Podman UserNS remapping as well for added assurance over UID/GID overlap. Make sure /etc/subuid and
+# /etc/subgid have enough range to accomodate or the container will not start. If that happens, increase
+# the size and  do podman system migrate then daemon reload the containers and restart
+
+UserNS=auto:size=65536
+
 Tmpfs=/tmp:rw,noexec,nosuid,nodev,size=256M
 Tmpfs=/run:rw,noexec,nosuid,nodev,size=64M
 Tmpfs=/var/cache/nginx:rw,noexec,nosuid,nodev,size=256M

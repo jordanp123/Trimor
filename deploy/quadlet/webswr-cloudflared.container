@@ -33,6 +33,12 @@ NoNewPrivileges=true
 DropCapability=ALL
 PodmanArgs=--memory=256m --pids-limit=4096 --cpu-shares=768
 
+# Using Podman UserNS remapping as well for added assurance over UID/GID overlap. Make sure /etc/subuid and
+# /etc/subgid have enough range to accomodate or the container will not start. If that happens, increase
+# the size and  do podman system migrate then daemon reload the containers and restart
+
+UserNS=auto:size=65536
+
 [Service]
 Restart=always
 TimeoutStartSec=900
