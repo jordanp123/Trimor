@@ -21,8 +21,37 @@ your git remote or the data pipeline lands as one unprivileged user instead of
 root. This stack is an easy rootless fit because it **publishes no ports** (the
 tunnel dials out), so there is no bind-below-1024 problem.
 
-Requires **Podman 5+**, cgroups v2, and a subuid range covering your `APP_UID`
-(the default 65536-wide range in `/etc/subuid` covers the stock 17001).
+Requires **Podman 5+** and cgroups v2. Subuid sizing matters here — see below.
+
+### User namespaces and `/etc/subuid`
+
+Both containers carry `UserNS=auto:size=65536`, so Podman gives **each one its
+own private, non-overlapping range of host UIDs**. A process escaping one
+container therefore lands in a namespace that doesn't overlap the other
+container's — or any other stack's on the same host.
+
+That costs subuids: **containers × size**, i.e. `2 × 65536 = 131072` for this
+stack — *twice* the 65536 a distro typically allocates. Check what the deploy
+account has:
+
+```sh
+grep "^$USER:" /etc/subuid /etc/subgid
+```
+
+If it is short, the containers simply fail to start. Widen the range in both
+files, then:
+
+```sh
+podman system migrate                 # re-map existing containers to the new range
+systemctl --user daemon-reload
+systemctl --user restart webswr-website.service webswr-cloudflared.service
+```
+
+Two related constraints: `APP_UID`/`TUNNEL_UID` in `config.webswr` must be
+**below** `size=` (a UID with nowhere to land inside the mapping cannot start —
+`install.sh` refuses the install rather than let it fail at 05:00), and if the
+host runs several rootless stacks, **each account needs its own non-overlapping
+range** (`cat /etc/subuid` to confirm).
 
 > **Status: this is what the project's own server runs.** The Docker Compose
 > deployment is maintained alongside it and the two are held in lockstep by
@@ -198,6 +227,35 @@ journalctl --user -u webswr-cloudflared -n 20
 
 Always `printf '%s'`, never `echo`: a trailing newline is stored verbatim and
 cloudflared rejects the token with a confusing auth error.
+
+## Verifying the isolation actually holds
+
+The architecture's central claim is that **nginx has no route off the host** —
+it can answer the tunnel and nothing else. That is worth proving rather than
+assuming, especially after a migration (the rootless network stack is netavark,
+not Docker's bridge, so an earlier check doesn't carry over):
+
+```sh
+# Must FAIL or time out. If it returns a page, the internal network isn't holding.
+podman exec WebSWR wget -T3 -qO- https://example.com ; echo "exit=$?"
+
+# ...while the site itself keeps serving through the tunnel:
+curl -sI https://your.domain/webswr/ | head -1
+```
+
+Worth re-running whenever Podman, the host kernel, or the network config
+changes. A few more one-liners for the same reason:
+
+```sh
+podman inspect WebSWR --format '{{.HostConfig.ReadonlyRootfs}} {{.HostConfig.CapDrop}}'
+podman top WebSWR huser user            # host UID vs in-container UID (UserNS mapping)
+podman secret ls                        # the token exists and is dated
+systemctl --user list-timers webswr-update.timer
+```
+
+**Host hygiene** for a machine running several service accounts: keep the deploy
+account's home unreadable by its siblings (`chmod 750 /home/webswr`), and note
+that `update.log` is written owner-only (0600) for the same reason.
 
 ## Gotchas
 

@@ -43,6 +43,10 @@ ACCEPTED_DIFFS = """
   - the tunnel token is a podman secret rather than .env.
   - podman adds image rollback; compose relies on `up -d` keeping the old
     container when a build fails.
+  - podman adds UserNS=auto:size=N per container (a private, non-overlapping
+    host UID range each). Compose has no per-service equivalent, so this is
+    podman-only hardening rather than drift. It costs (containers x size)
+    subuids for the deploy account -- see deploy/README.md.
 """
 
 

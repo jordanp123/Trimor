@@ -17,3 +17,10 @@ Environment=WEBSWR_BASE=%h/webswr
 ExecStart=%h/.local/bin/webswr-update.sh
 # Data fetches plus an image build; generous but not unbounded.
 TimeoutStartSec=1800
+
+# DO NOT add NoNewPrivileges=yes or ProtectSystem=strict here. It looks like
+# obvious hardening for a unit that runs a script, but rootless podman builds
+# its user namespace with the SETUID helpers newuidmap/newgidmap --
+# NoNewPrivileges blocks exactly that, and every deploy would fail. The real
+# isolation for this job comes from running as an unprivileged user at all,
+# which is the whole point of the rootless deployment.

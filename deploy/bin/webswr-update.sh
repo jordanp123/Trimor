@@ -99,6 +99,11 @@ esac
 # dependency); the log stays out of the build context (allowlist .dockerignore).
 LOG="$BASE/update.log"
 if [ -f "$LOG" ] && [ "$(wc -c < "$LOG")" -gt 1048576 ]; then mv -f "$LOG" "$LOG.1"; fi
+# Owner-only: the log carries paths, commit ids and image ids, and a host that
+# runs several stacks has other service accounts that have no business reading
+# them. Create it before the redirect so `tee` never makes it 0644 first.
+[ -f "$LOG" ] || : > "$LOG"
+chmod 600 "$LOG" "$LOG.1" 2>/dev/null || true
 exec > >(tee -a "$LOG") 2>&1
 echo "=== update run started $(date -u +%FT%TZ) (podman, rootless) ==="
 trap 'echo "=== ABORTED (exit $?) $(date -u +%FT%TZ) ==="' ERR

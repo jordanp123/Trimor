@@ -128,7 +128,32 @@ case "$SUBPATH" in .) ;; *[!A-Za-z0-9._-]*|""|*..*)
   echo "!! config.webswr SUBPATH must be a plain path segment or '.' (got '$SUBPATH')" >&2; exit 1 ;;
 esac
 
+# The units map a fixed-size user namespace (UserNS=auto:size=N). A container
+# UID at or above N has nowhere to land inside that mapping and the container
+# fails to start -- a runtime failure that would otherwise look unrelated to a
+# config.webswr edit made weeks earlier.
+# [0-9][0-9]* not [0-9]\+ -- \+ is a GNU sed extension; BSD sed silently fails
+# to match, which would leave this guard quietly doing nothing.
+USERNS_SIZE="$(sed -n 's/^UserNS=auto:size=\([0-9][0-9]*\).*/\1/p' "$SCRIPT_DIR"/quadlet/*.container | sort -n | head -1)"
+if [ -n "$USERNS_SIZE" ]; then
+  for v in APP_UID TUNNEL_UID; do
+    [ "${!v}" -lt "$USERNS_SIZE" ] || {
+      echo "!! config.webswr $v (${!v}) is >= the units' UserNS size ($USERNS_SIZE)." >&2
+      echo "   The container would install fine and then fail to start. Lower $v," >&2
+      echo "   or raise size= in deploy/quadlet/*.container (and widen /etc/subuid)." >&2
+      exit 1; }
+  done
+fi
+
 # ── Host sanity checks (warnings only -- none of these block installing) ─────
+# UserNS=auto carves a private range PER CONTAINER out of this user's subuids,
+# so the account needs at least (containers x size) of them -- more than the
+# 65536 a distro hands out by default.
+if [ -n "$USERNS_SIZE" ] && [ -r /etc/subuid ]; then
+  NEED=$(( USERNS_SIZE * $(ls "$SCRIPT_DIR"/quadlet/*.container | wc -l) ))
+  HAVE="$(awk -F: -v u="$(id -un)" '$1==u {s+=$3} END {print s+0}' /etc/subuid)"
+  [ "$HAVE" -ge "$NEED" ] || echo "** warning: /etc/subuid gives $(id -un) $HAVE subuids but UserNS=auto needs $NEED ($USERNS_SIZE x $(ls "$SCRIPT_DIR"/quadlet/*.container | wc -l) containers) — widen it, then: podman system migrate && systemctl --user daemon-reload"
+fi
 [ -d "$BASE_DIR/$CHECKOUT_DIR/.git" ] || echo "** warning: no git checkout at $BASE_DIR/$CHECKOUT_DIR — the updater will clone it on its first run"
 [ -f "$BASE_DIR/Dockerfile" ] || echo "** note: webroot not assembled yet — run the updater (step 3 below) before starting the services"
 case "$BASE_DIR" in *[[:space:]]*)
