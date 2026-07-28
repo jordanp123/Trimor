@@ -75,6 +75,41 @@ assert(r.lowestReal.min === 0, "the 4% baseline HAS failures, so its worst troug
 var rSafe = H({ spending: { strategy: "constant", initial: 30000 } });
 assert(rSafe.successRate === 1 && rSafe.lowestReal.min > 0,
   "an all-surviving plan's worst trough stays above $0 (min $" + Math.round(rSafe.lowestReal.min) + ")");
+
+// 5c) Representative cycles are ranked on REAL ending value, so the Worst/Best
+// case blocks agree with the Minimum/Maximum stats shown beside them and the
+// chart's highlighted lines really are the extremes of the displayed (real)
+// view. Ranking on NOMINAL used to pick different cycles entirely, because
+// 30-year cumulative inflation varies ~1.5x-3.7x by start year.
+(function () {
+  function repOK(s, label) {
+    assert(Math.abs(s.representative.worst.endValueReal - s.endingReal.min) < 0.01,
+      label + ": worst case IS the minimum real ending ($" +
+      Math.round(s.representative.worst.endValueReal) + " vs $" + Math.round(s.endingReal.min) + ")");
+    assert(Math.abs(s.representative.best.endValueReal - s.endingReal.max) < 0.01,
+      label + ": best case IS the maximum real ending ($" +
+      Math.round(s.representative.best.endValueReal) + " vs $" + Math.round(s.endingReal.max) + ")");
+    // The median block must pick a real cycle, so with an even cycle count it
+    // lands on one of the two straddling the interpolated percentile -- close,
+    // never the old multi-million-dollar gap.
+    assert(s.representative.median.endValueReal >= s.endingReal.p25 &&
+           s.representative.median.endValueReal <= s.endingReal.p75,
+      label + ": median case sits in the interquartile range ($" +
+      Math.round(s.representative.median.endValueReal) + ")");
+  }
+  repOK(H({ spending: { strategy: "percent", percent: 0.04 } }), "historical percent");
+  repOK(H(), "historical 4% rule");
+  if (self.SWR.mc) repOK(self.SWR.mc.run(P(), data, { method: "bootstrap", trials: 1500, seed: 11 }), "monte carlo");
+  // Real and nominal rankings genuinely differ -- without this, the asserts
+  // above would pass no matter which basis the engine ranked on. Use a plan
+  // that never fails: when cycles run dry they end at exactly $0 in BOTH
+  // bases, which ties the two orderings together and hides the difference.
+  var rr = H({ spending: { strategy: "percent", percent: 0.04 } });
+  var N = rr.years;
+  var nomWorst = rr.sampleSeries.reduce(function (a, b) { return a.series[N] < b.series[N] ? a : b; });
+  assert(rr.failed === 0 && nomWorst.realSeries[N] > rr.endingReal.min + 1,
+    "nominal-worst (" + nomWorst.startYear + ") is NOT the real-worst cycle, so the ranking basis matters");
+})();
 if (self.SWR.mc) {
   var mLow = self.SWR.mc.run(P(), data, { method: "bootstrap", trials: 2000, seed: 9 });
   assert(mLow.lowestReal && mLow.lowestReal.median <= mLow.endingReal.median + 1e-9 && mLow.lowestReal.max <= 1000000 + 1e-9,

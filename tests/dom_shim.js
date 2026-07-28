@@ -145,7 +145,7 @@ var DEFAULTS = {
 var KNOWN = {};
 ["themeBtn", "helpBtn", "helpOverlay", "helpClose", "helpTitle", "inputs", "allocSum", "spendRateHint", "fixedInflationWrap", "fixedInflationHint", "incomeRows", "addIncome",
  "adjustRows", "addAdjust", "mcOptions", "mcBlockWrap", "runBtn", "solveBtn", "shareBtn",
- "capeRateNow", "withdrawFreq", "withdrawFreqHint", "printBtn", "report",
+ "capeRateNow", "withdrawFreq", "withdrawFreqHint", "printBtn", "report", "buildStamp",
  "resetBtn", "solveBasis", "solveResult", "gsolveBtn", "gsolveBasis", "gsolveResult", "formMsg", "results", "successCard", "successBig", "successLabel", "headStats",
  "progressWrap", "progressBar", "progressLabel", "trajMode", "dollarMode", "trajUnit", "trajCanvas", "histCanvas",
  "rbdCard", "rbdCanvas", "rbdSub", "detailBody",

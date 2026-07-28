@@ -345,9 +345,16 @@
       avgMedian: avgPer.length ? pctl(avgPer, 50) : 0,
     };
 
-    // Identify representative cycles by ending value.
+    // Identify representative cycles by REAL ending value -- purchasing power,
+    // the same basis as the endingReal percentiles and the chart's default
+    // view. Ranking on nominal (as this once did) picks different cycles
+    // entirely: 30-year cumulative inflation runs from ~1.5x for a 1903
+    // retiree to ~3.7x for a 1975 one, so the "worst" nominal cycle can be
+    // mid-pack in real terms -- which left the Worst-case block disagreeing
+    // with the Minimum stat beside it, and the chart's red "worst" line drawn
+    // above cycles that really ended lower.
     let worst = 0, best = 0, medianIdx = 0;
-    const sortedByEnd = cycles.map((c, i) => [c.endValue, i]).sort((a, b) => a[0] - b[0]);
+    const sortedByEnd = cycles.map((c, i) => [c.endValueReal, i]).sort((a, b) => a[0] - b[0]);
     worst = sortedByEnd[0][1];
     best = sortedByEnd[sortedByEnd.length - 1][1];
     medianIdx = sortedByEnd[Math.floor(sortedByEnd.length / 2)][1];

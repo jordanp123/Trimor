@@ -24,6 +24,11 @@ A(document.getElementById("trajCanvas")._chart != null, "trajectory chart render
 A(missing.length === 0, "no unknown element ids referenced" + (missing.length ? ": " + missing.join(", ") : ""));
 A(document.documentElement.getAttribute("data-theme") === "light" ||
   document.documentElement.getAttribute("data-theme") === "dark", "theme applied");
+// Deployment stamp: identifies which build a bug report came from.
+A(/^Updated \d{4}-\d{2}-\d{2}$/.test(document.getElementById("buildStamp").textContent),
+  "build stamp shows the data-generation date (" + document.getElementById("buildStamp").textContent + ")");
+A(document.getElementById("buildStamp").title.indexOf(SWR_DATA.meta.generated) >= 0,
+  "build stamp tooltip carries the data vintage");
 
 // Integration: drive the real ui.js "Find max spending, using Monte Carlo" path.
 // Worker is undefined in this shim, so solve() takes its inline fallback -- which
