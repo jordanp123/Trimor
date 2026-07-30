@@ -212,7 +212,37 @@ A(document.getElementById("strategy").value === "percent", "guardrail solve kept
     "never says spending 'fell to 100%' (a binding floor means it did not fall)");
   A(ruined.stats.indexOf("% of yr 1") >= 0,
     "...with the rough-case income kept as a stat card");
+  // A floor ABOVE the ceiling is contradictory (the ceiling would silently win
+  // every year), so the run must refuse with a message, not produce results.
+  document.getElementById("spendFloor").value = "33000";
+  document.getElementById("spendCeiling").value = "27000";
+  var beforeBig = document.getElementById("successBig").textContent;
+  fire(document.getElementById("inputs"), "submit");
+  A(document.getElementById("formMsg").textContent.indexOf("above the ceiling") >= 0,
+    "floor > ceiling blocks the run with a message (" + document.getElementById("formMsg").textContent + ")");
+  A(document.getElementById("successBig").textContent === beforeBig,
+    "...and no new results were rendered");
   document.getElementById("spendFloor").value = "";
+  document.getElementById("spendCeiling").value = "";
+
+  // A floor typed for a percentage plan must NOT keep steering other strategies
+  // from its now-hidden field: the engine clamps Guyton spending too, so
+  // readInputs may only pass floor/ceiling for strategies whose panel shows
+  // the boxes.
+  function guytonSuccess() {
+    document.getElementById("strategy").value = "guyton";
+    document.getElementById("initialSpend").value = "55000";
+    fire(document.getElementById("inputs"), "submit");
+    return document.getElementById("successBig").textContent + "|" +
+           document.getElementById("successLabel").textContent;
+  }
+  var gClean = guytonSuccess();
+  document.getElementById("spendFloor").value = "80000"; // stale, hidden for guyton
+  var gStale = guytonSuccess();
+  A(gClean === gStale, "a stale hidden floor does not change Guyton results");
+  document.getElementById("spendFloor").value = "";
+  document.getElementById("initialSpend").value = "40000";
+
   // Constant-dollar keeps the classic success-rate headline.
   document.getElementById("strategy").value = "constant";
   document.getElementById("initialSpend").value = "40000";

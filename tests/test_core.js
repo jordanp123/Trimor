@@ -164,6 +164,26 @@ assert(rSafe.successRate === 1 && rSafe.lowestReal.min > 0,
     "best case is a SURVIVING cycle whenever any survived (got " +
     grim.representative.best.startYear + ", success=" + grim.representative.best.success + ")");
 
+  // VPW with a floor must register ruin even at ZERO fees. VPW used to be
+  // clamped to the balance unconditionally, so a zero-fee VPW+floor plan
+  // coasted at $0 forever: 0 failures, income floor 0%, every cycle "Survived"
+  // while the floor went unpaid. (With fees > 0 the fee tipped need over port,
+  // which masked the bug.)
+  var vf = core.runHistorical(P({
+    feeRate: 0,
+    spending: { strategy: "vpw", vpwReturn: 0.034, floor: 60000 },
+  }), data);
+  assert(vf.failed > 0, "zero-fee VPW+floor registers real failures (" + vf.failed + ")");
+  assert(vf.representative.worst.success === false, "...and its worst case is a failed cycle");
+  assert(vf.spending.incomeFloor.min > 0.99,
+    "...with the floor honored until ruin, not decayed to $0 (min ratio " +
+    vf.spending.incomeFloor.min.toFixed(2) + ")");
+  var vnf = core.runHistorical(P({
+    feeRate: 0,
+    spending: { strategy: "vpw", vpwReturn: 0.034 },
+  }), data);
+  assert(vnf.failed === 0, "floorless VPW still completes by design (0 failures, got " + vnf.failed + ")");
+
   repOK(H({ spending: { strategy: "percent", percent: 0.04 } }), "historical percent");
   repOK(H(), "historical 4% rule");
   if (self.SWR.mc) repOK(self.SWR.mc.run(P(), data, { method: "bootstrap", trials: 1500, seed: 11 }), "monte carlo");

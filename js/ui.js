@@ -149,8 +149,14 @@
       capeB: clampNum("capeB", 0.5, 0, 10),         // slope b on the earnings yield
       cape0: currentCape(),                        // starting CAPE for forward mode (shipped)
     };
-    const fl = parseFloat(stripNum($("spendFloor").value)); if (isFinite(fl)) sp.floor = fl;
-    const cl = parseFloat(stripNum($("spendCeiling").value)); if (isFinite(cl)) sp.ceiling = cl;
+    // Floor/ceiling only exist for the strategies whose panel SHOWS the boxes.
+    // The engine also clamps Guyton spending when these are set, so copying
+    // them unconditionally let a value typed under "Percentage of portfolio"
+    // keep steering a Guyton run from a hidden field.
+    if (strategy === "percent" || strategy === "vpw" || strategy === "cape") {
+      const fl = parseFloat(stripNum($("spendFloor").value)); if (isFinite(fl)) sp.floor = fl;
+      const cl = parseFloat(stripNum($("spendCeiling").value)); if (isFinite(cl)) sp.ceiling = cl;
+    }
     // Monthly payout (T-bill cash bucket) is a percentage-strategy-only option.
     if (strategy === "percent" && $("withdrawFreqVal").value === "monthly") sp.monthly = true;
     return {
@@ -184,6 +190,16 @@
     if (!(iv > 0) || !isFinite(iv) || iv > MAX_PORTFOLIO) return "Enter a starting portfolio between $1 and $10 trillion.";
     const y = Math.round(num("years", 0));
     if (y < 1 || y > DATA.years.length) return "Retirement length must be between 1 and " + DATA.years.length + " years.";
+    // A floor above the ceiling is a contradiction: the engine applies the
+    // floor first, so the ceiling would silently win every year and the floor
+    // would never bind. Refuse to run rather than quietly invert the request.
+    const st = $("strategy").value;
+    if (st === "percent" || st === "vpw" || st === "cape") {
+      const fl = parseFloat(stripNum($("spendFloor").value));
+      const cl = parseFloat(stripNum($("spendCeiling").value));
+      if (isFinite(fl) && isFinite(cl) && fl > cl)
+        return "Spending floor (" + money(fl) + ") is above the ceiling (" + money(cl) + ") — swap them or clear one.";
+    }
     return "";
   }
 

@@ -186,13 +186,16 @@
       // VPW amortizes the balance down to ~$0 in the final year by design, and a
       // floorLESS percentage strategy is inherently self-limiting (you only ever
       // spend a fraction of what you still hold), so cap those at the balance --
-      // reaching $0 there is plan completion, not ruin. A percentage strategy
+      // reaching $0 there is plan completion, not ruin. ANY of these strategies
       // WITH a floor can demand more than the balance holds in a bad sequence;
       // that is a genuine failure to fund the floor, so leave it unclamped and
-      // let the need>port test below register the ruin (otherwise a $0-fee plan
-      // would silently coast at $0 instead of failing).
-      if (sp.strategy === "vpw" ||
-          ((sp.strategy === "percent" || sp.strategy === "cape") && sp.floor == null)) {
+      // let the need>port test below register the ruin. VPW must take this
+      // branch too: clamping it regardless of floor let a zero-fee VPW+floor
+      // plan coast at $0 forever -- 0 failures, income floor 0%, every cycle
+      // "Survived" while the floor went unpaid (fees>0 masked it by tipping
+      // need over port through the fee instead).
+      if ((sp.strategy === "vpw" || sp.strategy === "percent" || sp.strategy === "cape") &&
+          sp.floor == null) {
         spend = Math.min(spend, port);
       }
 
