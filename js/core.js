@@ -348,6 +348,11 @@
     }
     const spending = {
       strategy: p.spending.strategy,
+      // A spending floor changes the risk profile: it forces the draw up in bad
+      // sequences, so a percentage/VPW/CAPE plan that could otherwise only
+      // shrink can genuinely run dry. The UI needs this to avoid telling
+      // someone their plan "can't run out" when their own floor means it can.
+      hasFloor: p.spending.floor != null,
       firstYear: total ? cycles[0].realWithdrawals[0] : 0,
       firstYearMin: total ? fyMin : 0,
       firstYearMax: total ? fyMax : 0,

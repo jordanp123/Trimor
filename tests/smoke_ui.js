@@ -5,8 +5,15 @@
 var fails = 0;
 function A(c, m) { if (c) console.log("  ok: " + m); else { fails++; console.log("  FAIL: " + m); } }
 
-var big = document.getElementById("successBig").textContent;
-A(/%$/.test(big), "successBig shows a percent ('" + big + "')");
+// The hero number is a success % for constant/Guyton plans but a dollar income
+// for variable ones, so "did it render" must not assume a unit -- it asserts a
+// value is present AND that the eyebrow names which metric it is.
+function rendered(what) {
+  var big = document.getElementById("successBig").textContent;
+  var kind = document.getElementById("successKind").textContent;
+  A(big && big !== "\u2014" && kind.length > 0, what + " (" + kind + ": " + big + ")");
+}
+rendered("results rendered on load");
 A(document.getElementById("headStats").children.length >= 3,
   "headStats populated (" + document.getElementById("headStats").children.length + " cards)");
 A(document.getElementById("detailBody").children.length >= 4,
@@ -91,7 +98,7 @@ var spendAfter = document.getElementById("initialSpend").value;
 A(spendAfter !== spendBefore && unc(spendAfter) > 25000 && unc(spendAfter) < 70000,
   "MC solver changed spending (" + spendBefore + " -> " + spendAfter + ")");
 A(document.getElementById("runMonteCarlo").checked, "MC solve enabled the Monte Carlo view");
-A(/%$/.test(document.getElementById("successBig").textContent), "results still render after MC solve");
+rendered("results still render after MC solve");
 A(document.getElementById("solveResult").hidden === false &&
   document.getElementById("solveResult").children.length > 0, "solver result box is shown with content");
 
@@ -148,23 +155,64 @@ A(document.getElementById("strategy").value === "percent", "guardrail solve kept
     document.getElementById("spendFloor").value = ""; document.getElementById("spendCeiling").value = "";
     fire(document.getElementById("inputs"), "submit");
     return { big: document.getElementById("successBig").textContent,
+             kind: document.getElementById("successKind").textContent,
              cls: document.getElementById("successCard").className,
              lbl: document.getElementById("successLabel").textContent };
   }
   var r4 = runWith(4), r8 = runWith(8);
-  A(/^\d+%$/.test(r4.big) && r4.lbl.indexOf("year-one income") >= 0,
-    "percentage plan headlines the income floor, not the success rate (" + r4.big + ")");
-  A(r4.lbl.indexOf("can't run out of money") >= 0,
-    "headline says plainly that the plan cuts income instead of running out");
-  // parseInt, not unc(): these read "21%" and a bare + on that is NaN.
-  A(parseInt(r8.big, 10) < parseInt(r4.big, 10),
-    "a reckless 8%/yr headline is worse than 4%/yr (" + r8.big + " vs " + r4.big + ")");
+  A(r4.kind === "Lowest income \u00b7 rough case" && /^\$/.test(r4.big),
+    "percentage plan headlines the income in DOLLARS, labelled so it can't be read as a success rate ("
+    + r4.kind + ": " + r4.big + ")");
+  // Floorless: reports the observed outcome, never a claim of impossibility.
+  A(r4.lbl.indexOf("ran out of money") >= 0 && r4.lbl.indexOf("cuts your income rather than running dry") >= 0,
+    "floorless plan states what happened and that it cuts income instead");
+  // Compare the "% of your first year" figure carried in the label, since the
+  // hero number is now a dollar income.
+  function pctOfYearOne(lbl) { var m = /(\d+)% of your first year/.exec(lbl); return m ? +m[1] : NaN; }
+  A(pctOfYearOne(r8.lbl) < pctOfYearOne(r4.lbl),
+    "a reckless 8%/yr keeps less of year-one income than 4%/yr ("
+    + pctOfYearOne(r8.lbl) + "% vs " + pctOfYearOne(r4.lbl) + "%)");
   A(r8.cls.indexOf("bad") >= 0,
     "the 8%/yr plan is coloured red (" + r8.cls.trim() + ")");
   // ...and a sane 4% is amber, not red: bands that paint every reasonable plan
   // red would just train people to ignore the colour.
   A(r4.cls.indexOf("warn") >= 0,
     "a 4%/yr plan is amber, not red (" + r4.cls.trim() + ")");
+
+  // A spending FLOOR makes a percentage/VPW/CAPE plan able to run dry (the
+  // floor forces the draw up in bad sequences), so the headline must never
+  // claim it cannot -- that contradiction is what confused users.
+  function runFloored(pct, fl) {
+    document.getElementById("strategy").value = "percent";
+    document.getElementById("spendPercent").value = String(pct);
+    document.getElementById("spendFloor").value = String(fl);
+    document.getElementById("spendCeiling").value = "";
+    fire(document.getElementById("inputs"), "submit");
+    return { big: document.getElementById("successBig").textContent,
+             lbl: document.getElementById("successLabel").textContent,
+             stats: textOf(document.getElementById("headStats")) };
+  }
+  var survived = runFloored(4, 30000);   // floor set, but nothing failed
+  A(survived.lbl.indexOf("can't run out of money") < 0 && survived.lbl.indexOf("cuts your income rather than running dry") < 0,
+    "floored plan never claims it cannot run out");
+  A(survived.lbl.indexOf("spending floor forces the draw up") >= 0,
+    "floored plan warns the floor could exhaust it in a worse sequence");
+  A(survived.lbl.indexOf("ran out of money") >= 0,
+    "floored plan still reports the observed outcome (none ran out)");
+
+  var ruined = runFloored(4, 80000);     // floor high enough to cause real ruin
+  A(parseInt(ruined.big, 10) < 100 && ruined.lbl.indexOf("lasted") >= 0,
+    "a floored plan that DID fail headlines the success rate (" + ruined.big + ")");
+  // With a binding floor the draw never falls, so the ratio is 100% -- saying
+  // "it fell to 100%" would be nonsense; the constant draw is the cause here.
+  A(ruined.lbl.indexOf("held the draw at its year-one level") >= 0
+    || ruined.lbl.indexOf("Spending is variable too") >= 0,
+    "...and still explains the spending side of the failure");
+  A(ruined.lbl.indexOf("fell to 100% of year one") < 0,
+    "never says spending 'fell to 100%' (a binding floor means it did not fall)");
+  A(ruined.stats.indexOf("% of yr 1") >= 0,
+    "...with the rough-case income kept as a stat card");
+  document.getElementById("spendFloor").value = "";
   // Constant-dollar keeps the classic success-rate headline.
   document.getElementById("strategy").value = "constant";
   document.getElementById("initialSpend").value = "40000";
@@ -187,7 +235,7 @@ A(document.getElementById("withdrawFreqHint").textContent.indexOf("T-bill") >= 0
   "monthly hint mentions the T-bill cash bucket");
 document.getElementById("spendFloor").value = ""; document.getElementById("spendCeiling").value = "";
 fire(document.getElementById("inputs"), "submit");
-A(/%$/.test(document.getElementById("successBig").textContent), "monthly percentage run renders a success %");
+rendered("monthly percentage run renders results");
 fire(freqBtns[0], "click"); // back to Annual
 A(document.getElementById("withdrawFreqVal").value === "annual", "clicking Annual restores the annual value");
 
@@ -201,7 +249,7 @@ document.getElementById("strategy").value = "cape";
 document.getElementById("spendFloor").value = "";
 document.getElementById("spendCeiling").value = "";
 fire(document.getElementById("inputs"), "submit");
-A(/%$/.test(document.getElementById("successBig").textContent), "CAPE strategy runs & renders a success %");
+rendered("CAPE strategy runs & renders results");
 
 // Rich/Broke/Dead overlay rendered (mortality data is loaded in this bundle).
 A(document.getElementById("rbdCard").hidden === false, "rich/broke/dead card shown");
@@ -246,7 +294,7 @@ noteRows[0].querySelector(".f-start").value = "1";
 noteRows[0].querySelector(".f-end").value = "10";
 noteRows[0].querySelector(".f-note").value = "abcdefghijklmnopqrstuvwxyz"; // 26 chars; read-side cap = 24
 fire(document.getElementById("inputs"), "submit");
-A(/%$/.test(document.getElementById("successBig").textContent), "run with a noted income still renders");
+rendered("run with a noted income still renders");
 function textOf(n) {
   var s = n && n.textContent ? String(n.textContent) : "";
   ((n && n.children) || []).forEach(function (c) { s += " " + textOf(c); });
@@ -280,10 +328,12 @@ SWR.qr.dataURL = _realQR;
 // (strategy, targetSuccess, the income row) must be present.
 var slim = decodeURIComponent(history._last.slice(1));
 A(slim.indexOf("mcSeed") >= 0, "slim hash always carries mcSeed");
-// Assert on fields the tests above genuinely left non-default (strategy=cape,
-// spendPercent=8, an income row). targetSuccess and initialSpend are back AT
-// their defaults by this point, so omitting them is the correct behaviour.
-A(slim.indexOf("strategy") >= 0 && slim.indexOf("spendPercent") >= 0 && slim.indexOf("inc") >= 0,
+// Assert only on fields the tests above definitively left non-default:
+// strategy (cape vs the "constant" default) and the income row. Anything the
+// preceding blocks happen to restore to its default (targetSuccess,
+// initialSpend, spendPercent, spendFloor) is CORRECTLY omitted, so pinning
+// those here would just make this test brittle against unrelated edits.
+A(slim.indexOf("strategy") >= 0 && slim.indexOf("inc") >= 0,
   "slim hash carries the touched fields + flows");
 A(slim.indexOf("vpwReturn") < 0 && slim.indexOf("gkGuard") < 0 && slim.indexOf("allocGold") < 0 && slim.indexOf("adj") < 0,
   "slim hash omits untouched fields and empty flow lists");

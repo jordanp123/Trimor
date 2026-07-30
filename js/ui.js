@@ -579,6 +579,7 @@
 
   function render(s) {
     if (!s || s.total === 0) {
+      $("successKind").textContent = "";
       $("successBig").textContent = "—";
       $("successCard").className = "success-card";
       $("successLabel").textContent = "Not enough historical data for this allocation and length.";
@@ -590,17 +591,32 @@
     }
     const unit = s.mode === "montecarlo" ? "trials" : "cycles";
     const pct = s.successRate * 100;
-    // A percentage-of-portfolio, VPW or CAPE plan spends a share of what it
-    // still holds, so it CANNOT run out and its success rate is ~always 100% --
-    // an 8%/yr plan scores the same perfect green as a 4% one. For those the
-    // headline is the risk that actually exists: how far the income falls. The
-    // success rate stays visible in the stat cards (and matters again when a
-    // spending FLOOR is set, which can force over-spending into real ruin).
+    // A percentage-of-portfolio, VPW or CAPE plan normally spends a share of
+    // what it still holds, so its success rate is ~always 100% -- an 8%/yr plan
+    // would score the same perfect green as a 4% one. For those the headline is
+    // the risk that actually exists: how far the income falls.
+    //
+    // But "it can't run out" is NOT a safe thing to assert. A spending floor
+    // forces the draw up in bad sequences and genuinely causes ruin (measured:
+    // percent+$80k floor 87 failures, VPW+$60k 54, CAPE+$60k 47), and even a
+    // floorless plan is exhausted by a large enough recurring expense (126/126
+    // with $90k/yr). So the wording below reports what the run actually DID --
+    // never a claim of impossibility -- and when cycles did fail, the success
+    // rate takes back the headline because running dry outranks a pay cut.
     const floor = s.spending && s.spending.incomeFloor;
-    const selfLimiting = floor && ["percent", "vpw", "cape"].indexOf(s.spending.strategy) >= 0;
+    const variable = floor && ["percent", "vpw", "cape"].indexOf(s.spending.strategy) >= 0;
+    const selfLimiting = variable && s.failed === 0;
     if (selfLimiting) {
       const keep = floor.p10;                       // rough-case: 10th-percentile cycle
-      $("successBig").textContent = Math.round(keep * 100) + "%";
+      // Show DOLLARS, not a second percentage. The card's slot is where people
+      // expect the success rate, so a bare "97%" that actually means something
+      // else reads as a contradictory success number. An income in dollars
+      // cannot be confused with a rate -- and it is the figure you judge a
+      // retirement by. The percentage moves into the sentence as context.
+      $("successKind").textContent = "Lowest income · rough case";
+      $("successBig").textContent = s.spending.leanestYear
+        ? money(s.spending.leanestYear.p10) + "/yr"
+        : Math.round(keep * 100) + "%";
       // Bands calibrated against real plans rather than picked round: a pure
       // percentage plan halves its income in a bad sequence no matter how
       // modest the rate (3% -> 55%, 4% -> 48%, 5% -> 41%), so those sit in
@@ -610,16 +626,36 @@
       // (4% + $30k floor -> 75%). Bands any tighter would paint every sane
       // plan red, which teaches people to ignore the colour.
       $("successCard").className = "success-card " + (keep >= 0.6 ? "good" : keep >= 0.4 ? "warn" : "bad");
-      let lbl = "of year-one income survives a rough case";
-      if (s.spending.leanestYear) lbl += " — spending fell to about " + money(s.spending.leanestYear.p10) + "/yr";
-      lbl += ". This plan can't run out of money; it cuts your income instead"
-        + (s.failed ? " — and " + s.failed + " of " + s.total.toLocaleString() + " " + unit + " still failed outright." : ".");
+      let lbl = "Your leanest year in the worst 1-in-10 " + unit.replace(/s$/, "")
+        + " — " + Math.round(keep * 100) + "% of your first year"
+        + (s.spending.firstYearMax <= s.spending.firstYearMin * 1.001 + 1
+            ? " (" + money(s.spending.firstYear) + ")" : "") + ".";
+      lbl += " No " + unit.replace(/s$/, "") + " ran out of money"
+        + (s.spending.hasFloor
+            // Their own floor makes ruin possible, so don't imply safety.
+            ? ", but your spending floor forces the draw up in a bad sequence — a worse "
+              + "run than any on record could still exhaust it."
+            : "; this plan cuts your income rather than running dry.");
       $("successLabel").textContent = lbl;
     } else {
+      $("successKind").textContent = "Success rate";
       $("successBig").textContent = (pct >= 99.95 ? "100" : pct.toFixed(1)) + "%";
       $("successCard").className = "success-card " + (s.successRate >= 0.95 ? "good" : s.successRate >= 0.75 ? "warn" : "bad");
       let label = s.succeeded.toLocaleString() + " of " + s.total.toLocaleString() + " " + unit + " lasted " + s.years + " years";
       if (s.startYears) label += " · retirements starting " + s.startYears.first + "–" + s.startYears.last;
+      // A variable plan that DID fail carries both risks, so name the second
+      // one here -- otherwise the pay cut disappears the moment ruin appears.
+      if (variable) {
+        // A binding floor pins the draw at its year-one level, so the ratio is
+        // 100% and "it fell to 100%" would be nonsense -- in that case the
+        // constant draw IS the cause of ruin, which is the useful thing to say.
+        label += floor.p10 >= 0.995
+          ? ". Your spending floor held the draw at its year-one level while the portfolio shrank —"
+            + " that is what exhausted it."
+          : ". Spending is variable too: in a rough case it fell to "
+            + Math.round(floor.p10 * 100) + "% of year one"
+            + (s.spending.hasFloor ? " — and your floor is what forced the draw up into these failures." : ".");
+      }
       $("successLabel").textContent = label;
     }
 
@@ -628,8 +664,12 @@
       selfLimiting
         ? statCard("Money lasted", (pct >= 99.95 ? "100" : pct.toFixed(1)) + "%")
         : statCard("Median end (real)", money(s.endingReal.median)),
-      selfLimiting && s.spending.leanestYear
-        ? statCard("Typical leanest yr", money(s.spending.leanestYear.median))
+      // Whichever risk is not the headline still gets a card, so both are
+      // always on screen for a variable plan.
+      variable && s.spending.leanestYear
+        ? (selfLimiting
+            ? statCard("Typical leanest yr", money(s.spending.leanestYear.median))
+            : statCard("Rough-case income", Math.round(floor.p10 * 100) + "% of yr 1"))
         : statCard("10th pct (real)", money(s.endingReal.p10)),
       statCard("Failures", String(s.failed))
     );
@@ -984,8 +1024,10 @@
       // "100%" stand alone on paper.
       if (sp.incomeFloor && ["percent", "vpw", "cape"].indexOf(sp.strategy) >= 0) {
         rptKV(sec, "Income floor vs year one (typical / rough case)",
-          Math.round(sp.incomeFloor.median * 100) + "% / " + Math.round(sp.incomeFloor.p10 * 100) +
-          "% — this plan cuts income rather than running out");
+          Math.round(sp.incomeFloor.median * 100) + "% / " + Math.round(sp.incomeFloor.p10 * 100) + "%"
+          + (s.failed ? " — and " + s.failed + " run(s) still ran out"
+             : sp.hasFloor ? " — your spending floor means ruin is possible in a worse sequence"
+             : " — this plan cuts income rather than running out"));
       }
       if (sp.avgMedian) rptKV(sec, "Average yearly spending (median cycle)", fmtExact(sp.avgMedian));
     }

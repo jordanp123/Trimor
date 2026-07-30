@@ -258,6 +258,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .success-card.good { background: linear-gradient(135deg, #12a06a, #0c7d54); }
 .success-card.warn { background: linear-gradient(135deg, #e69500, #c97d00); }
 .success-card.bad { background: linear-gradient(135deg, #e2483d, #c0392e); }
+/* Eyebrow naming the headline metric, so a percentage is never ambiguous. */
+.success-kind { font-size: 11px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.85; margin-bottom: 4px; }
+.success-kind:empty { display: none; }
 .success-big { font-size: 40px; font-weight: 720; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .success-label { font-size: 12.5px; opacity: 0.92; margin-top: 6px; }
 .head-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
