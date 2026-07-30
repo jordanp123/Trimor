@@ -43,6 +43,8 @@ import urllib.request
 from datetime import date
 from html.parser import HTMLParser
 
+import xls  # local, stdlib-only reader for Shiller's legacy .xls workbook
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 CACHE = os.path.join(HERE, ".cache")
@@ -107,19 +109,25 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 _OPENER = urllib.request.build_opener(_NoRedirect())
 
 
-def fetch(url, cache_name, refresh, optional=False):
+def fetch(url, cache_name, refresh, optional=False, binary=False):
     """Return text of url, caching under tools/.cache ONLY (repo-local). Never a
     world-writable dir like /tmp, where any local process could plant a file the
     pipeline would silently trust.
 
     optional=True returns None instead of aborting: for a cross-check source,
     an outage must not block a deploy of otherwise-good data -- it downgrades
-    the run to "unverified", which the site then says out loud."""
+    the run to "unverified", which the site then says out loud.
+
+    binary=True returns bytes and caches them verbatim -- decoding a .xls as
+    UTF-8 would corrupt it."""
     os.makedirs(CACHE, exist_ok=True)
     path = os.path.join(CACHE, cache_name)
     if not refresh and os.path.exists(path):
+        print(f"  [cache] {cache_name} <- {path}")
+        if binary:
+            with open(path, "rb") as f:
+                return f.read()
         with open(path, encoding="utf-8", errors="replace") as f:
-            print(f"  [cache] {cache_name} <- {path}")
             return f.read()
     last = None
     for attempt in range(1, FETCH_RETRIES + 1):
@@ -133,6 +141,10 @@ def fetch(url, cache_name, refresh, optional=False):
                     print(f"  [warn]  {cache_name} sent more than {MAX_FETCH_BYTES} bytes; ignoring.")
                     return None
                 sys.exit(f"FATAL: {url} sent more than {MAX_FETCH_BYTES} bytes; refusing.")
+            if binary:
+                with open(path, "wb") as f:
+                    f.write(data)
+                return data
             raw = data.decode("utf-8", errors="replace")
             with open(path, "w", encoding="utf-8") as f:
                 f.write(raw)
@@ -387,6 +399,119 @@ def bls_crosscheck(years, inflation, refresh):
             "detail": f"{compared} recent year(s) matched the BLS within {worst_d * 100:.2f}pp."}
 
 
+# Robert Shiller's own workbook -- the PRIMARY source multpl.com republishes.
+# Reading it directly is a second opinion on the numbers multpl gives us, and
+# uniquely it covers the pre-1928 era, where multpl is otherwise our only
+# source. Advisory only: multpl stays the source of record, because this URL is
+# a website-builder CDN blob that can change without notice and because a
+# mis-parse of a binary format must never be able to reach the site.
+SHILLER_URL = ("https://img1.wsimg.com/blobby/go/e5e77e0b-59d1-44d9-ab25-4763ac982e53/"
+               "downloads/165d8a6e-26bf-44ec-a26c-a35f7f993480/ie_data.xls")
+# Observed agreement is mean 0.01pp / worst 0.10pp across 155 years, so these
+# leave ~10x headroom. BOTH are checked: a mean over 150+ years barely moves for
+# one corrupted year (a 5pp error shifts it by 0.03pp), so the worst-year gate is
+# what catches a single bad value, and the mean is what catches systematic drift.
+SHILLER_TOL_MEAN = 0.001   # 0.1pp average
+SHILLER_TOL_WORST = 0.015  # 1.5pp in any single year
+
+
+def _shiller_columns(cells):
+    """{column: {year: {month: value}}} for every plausible numeric column.
+
+    Columns are found by VALUE, not by header text or a pinned index: the caller
+    scores each one against the series we already ship and keeps the best match.
+    A column moved or inserted upstream is then detected rather than silently
+    mis-read -- and it avoids implementing BIFF's shared-string table (and its
+    62 CONTINUE records) purely to read a header.
+    """
+    dates = {}                     # row -> Shiller's YYYY.MM date (note: .1 == October)
+    for (row, col), val in cells.items():
+        if col == 0 and 1871.0 <= val <= 2100.0:
+            dates[row] = val
+    if len(dates) < 1000:
+        raise ValueError("date column not recognisable")
+    out = {}
+    for col in range(1, 12):
+        by_year = {}
+        for row, d in dates.items():
+            v = cells.get((row, col))
+            if not v or v <= 0:
+                continue
+            month = round((d - int(d)) * 100)
+            if 1 <= month <= 12:
+                by_year.setdefault(int(d), {})[month] = v
+        if len(by_year) > 100:
+            out[col] = by_year
+    if not out:
+        raise ValueError("no column carried enough dated values")
+    return out
+
+
+def _annual_inflation(by_year, year):
+    """Inflation for `year` using THIS pipeline's own convention for that era.
+
+    Pre-1928 the reconstruction takes multpl's by-year (January) CPI, so it is a
+    Jan->Jan change; from 1928 the by-month page gives a Dec->Dec change. The
+    cross-check has to mirror that or it reports a divergence that is really
+    just two different (both valid) definitions of annual inflation.
+    """
+    if year <= EXT_LAST:                      # Jan(y) -> Jan(y+1)
+        a, b = by_year.get(year, {}).get(1), by_year.get(year + 1, {}).get(1)
+    else:                                     # Dec(y-1) -> Dec(y)
+        a, b = by_year.get(year - 1, {}).get(12), by_year.get(year, {}).get(12)
+    return (b / a - 1) if (a and b) else None
+
+
+def shiller_crosscheck(years, inflation, refresh):
+    """Soft second opinion on inflation, straight from Shiller's workbook."""
+    try:
+        raw = fetch(SHILLER_URL, "ie_data.xls", refresh, optional=True, binary=True)
+    except Exception as e:                                   # never let this abort a run
+        raw = None
+        print(f"  [warn]  Shiller fetch raised {e!r}")
+    if not raw:
+        return {"name": "Shiller source cross-check", "status": "unavailable",
+                "detail": "Robert Shiller's workbook (the primary source our market data is "
+                          "republished from) could not be downloaded, so the pre-1928 series "
+                          "and inflation were not verified against it this run."}
+    try:
+        cells = xls.read_sheet(raw, "Data")
+        candidates = _shiller_columns(cells)
+    except Exception as e:                                   # incl. XlsError
+        return {"name": "Shiller source cross-check", "status": "unavailable",
+                "detail": f"Robert Shiller's workbook could not be read ({e}); its layout may "
+                          "have changed. Market data was not verified against the primary source."}
+
+    ours = {y: inflation[i] for i, y in enumerate(years) if inflation[i] is not None}
+    best = None
+    for col, by_year in candidates.items():
+        diffs = []
+        for y in sorted(ours):
+            theirs = _annual_inflation(by_year, y)
+            if theirs is not None:
+                diffs.append(abs(theirs - ours[y]))
+        if len(diffs) < 100:
+            continue
+        mean = sum(diffs) / len(diffs)
+        if best is None or mean < best[1]:
+            best = (col, mean, max(diffs), len(diffs))
+    if best is None:
+        return {"name": "Shiller source cross-check", "status": "unavailable",
+                "detail": "No column in Shiller's workbook lined up with our inflation series; "
+                          "its layout has probably changed. Market data was not verified "
+                          "against the primary source."}
+    _, mean_err, worst_err, n = best
+    if mean_err > SHILLER_TOL_MEAN or worst_err > SHILLER_TOL_WORST:
+        return {"name": "Shiller source cross-check", "status": "diverged",
+                "detail": f"Our inflation series differs from Robert Shiller's own data by "
+                          f"{mean_err * 100:.2f} percentage points on average across {n} years "
+                          f"(worst {worst_err * 100:.2f}pp). Inflation-adjusted (today's-dollar) "
+                          "figures, and the pre-1928 history in particular, may be unreliable."}
+    return {"name": "Shiller source cross-check", "status": "ok",
+            "detail": f"{n} years matched Shiller's primary data (mean {mean_err * 100:.2f}pp, "
+                      f"worst {worst_err * 100:.2f}pp)."}
+
+
 def cpi_anchors(years, inflation):
     """Guard: the inflation series must match published BLS CPI-U rates."""
     idx = {y: i for i, y in enumerate(years)}
@@ -550,8 +675,9 @@ def main():
 
     # Soft cross-check LAST: it never blocks a deploy, it annotates one. The
     # result ships with the data and the site surfaces anything but "ok".
-    print("Live cross-check against the BLS API (advisory -- never blocks):")
-    validation = [bls_crosscheck(years, inflation, refresh)]
+    print("Live cross-checks against independent sources (advisory -- never block):")
+    validation = [bls_crosscheck(years, inflation, refresh),
+                  shiller_crosscheck(years, inflation, refresh)]
     for v in validation:
         print(f"  [{v['status'].upper()}] {v['name']}: {v['detail']}")
 

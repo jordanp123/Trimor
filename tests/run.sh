@@ -30,6 +30,11 @@ runbundle "security (hostile hash + input caps)" \
   "$DIR/js/core.js" "$DIR/js/montecarlo.js" "$DIR/js/mortality.js" "$DIR/js/amortize.js" "$DIR/js/compound.js" "$DIR/js/charts.js" "$DIR/js/qrcode.js" \
   "$DIR/js/ui.js" "$DIR/tests/security_test.js"
 
+# The stdlib .xls reader the data pipeline uses for its Shiller cross-check.
+echo "== xls reader (OLE2 + BIFF8) =="
+if python3 "$DIR/tools/test_xls.py"; then :; else fail=1; fi
+echo ""
+
 # Deployment parity: the Docker and Podman stacks must stay equivalent.
 echo "== deployment parity (docker compose vs podman quadlets) =="
 if python3 "$DIR/tests/deploy_parity.py"; then :; else fail=1; fi
