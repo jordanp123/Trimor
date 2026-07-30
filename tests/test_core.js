@@ -126,6 +126,44 @@ assert(rSafe.successRate === 1 && rSafe.lowestReal.min > 0,
       label + ": median case sits in the interquartile range ($" +
       Math.round(s.representative.median.endValueReal) + ")");
   }
+  // The Worst-case block must show an ACTUAL failure whenever any cycle failed.
+  // A ruined cycle and one that spends its last dollar in the final year both
+  // end at exactly $0, so ranking on ending value alone let a "Survived" cycle
+  // take the slot (production report: 97.7% success, Worst case 1965
+  // "Survived", while 1966/68/69 had really failed).
+  var reported = core.runHistorical(P({
+    initialValue: 600000, years: 24, allocation: { stocks: 0.7, bonds: 0.3 }, feeRate: 0.0005,
+    spending: { strategy: "percent", percent: 0.05, floor: 27000, ceiling: 33000, monthly: true },
+  }), data);
+  assert(reported.failed > 0, "the reported scenario still has failures (" + reported.failed + ")");
+  assert(reported.representative.worst.success === false,
+    "worst case is a FAILED cycle when failures exist (got " + reported.representative.worst.startYear +
+    ", success=" + reported.representative.worst.success + ")");
+  var zeroSurvivor = reported.sampleSeries.filter(function (c) {
+    return c.success && c.realSeries[reported.years] < 0.01;
+  });
+  assert(zeroSurvivor.length > 0,
+    "...and a $0-but-survived cycle exists to tie with (" + zeroSurvivor.map(function (c) { return c.startYear; }).join(",") + ")");
+  // Among failures, the earliest ruin is the worst one to show.
+  var earliest = Math.min.apply(null, reported.sampleSeries.filter(function (c) { return !c.success; })
+    .map(function (c) { return c.failedYear; }));
+  assert(reported.representative.worst.failedYear === earliest,
+    "worst case is the cycle that ran dry earliest (yr " + (earliest + 1) + ")");
+
+  // The mirror: when nearly everything fails, every cycle ends at $0 too, so
+  // the MAXIMUM ties and the Best-case block could show a failed cycle while a
+  // survivor exists (measured: 50/50 stocks-gold, $90k floor -> best showed
+  // 1996 "Failed yr 15" though 1971 survived).
+  var grim = core.runHistorical(P({
+    allocation: { stocks: 0.5, gold: 0.5 }, feeRate: 0.001,
+    spending: { strategy: "percent", percent: 0.04, floor: 90000 },
+  }), data);
+  assert(grim.succeeded > 0 && grim.failed > 0 && grim.endingReal.max < 0.01,
+    "the grim scenario has survivors, failures, and every cycle ending at $0");
+  assert(grim.representative.best.success === true,
+    "best case is a SURVIVING cycle whenever any survived (got " +
+    grim.representative.best.startYear + ", success=" + grim.representative.best.success + ")");
+
   repOK(H({ spending: { strategy: "percent", percent: 0.04 } }), "historical percent");
   repOK(H(), "historical 4% rule");
   if (self.SWR.mc) repOK(self.SWR.mc.run(P(), data, { method: "bootstrap", trials: 1500, seed: 11 }), "monte carlo");

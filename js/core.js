@@ -376,8 +376,38 @@
     // above cycles that really ended lower.
     let worst = 0, best = 0, medianIdx = 0;
     const sortedByEnd = cycles.map((c, i) => [c.endValueReal, i]).sort((a, b) => a[0] - b[0]);
-    worst = sortedByEnd[0][1];
-    best = sortedByEnd[sortedByEnd.length - 1][1];
+    // Same $0 tie in the other direction: when every cycle is exhausted the
+    // maximum ties at zero, and picking the last tied index can label the BEST
+    // case "Failed" while a survivor exists (measured: 50/50 stocks-gold with a
+    // $90k floor showed best = 1996 "Failed yr 15" though 1971 survived).
+    // Survivors beat failures; then the largest ending; among failures alone,
+    // lasting longest is the best outcome available.
+    for (let i = 1; i < cycles.length; i++) {
+      const cur = cycles[best], cand = cycles[i];
+      const betterThanCurrent = cur.success !== cand.success
+        ? cand.success                                    // a survivor beats any failure
+        : cand.success
+          ? cand.endValueReal > cur.endValueReal          // both survived: more left is better
+          : cand.failedYear > cur.failedYear;             // both failed: lasting longer is better
+      if (betterThanCurrent) best = i;
+    }
+    // "Worst" cannot be chosen on ending value alone. A cycle that ran dry and a
+    // cycle that spent its last dollar in the FINAL year both end at exactly $0
+    // (the latter counts as completing the plan), so a tie at zero could hand
+    // the Worst-case slot to a cycle labelled "Survived" while other cycles
+    // genuinely failed -- reported from production: 97.7% success, yet Worst
+    // case showed 1965 "Survived" while 1966/68/69 had actually failed.
+    // Order: real failures first, then whichever ran dry EARLIEST, then (if
+    // nothing failed) the smallest ending balance.
+    for (let i = 1; i < cycles.length; i++) {
+      const cur = cycles[worst], cand = cycles[i];
+      const worseThanCurrent = cur.success !== cand.success
+        ? !cand.success                                   // a failure beats any survivor
+        : !cand.success
+          ? cand.failedYear < cur.failedYear              // both failed: earlier ruin is worse
+          : cand.endValueReal < cur.endValueReal;         // both survived: less left is worse
+      if (worseThanCurrent) worst = i;
+    }
     medianIdx = sortedByEnd[Math.floor(sortedByEnd.length / 2)][1];
 
     // Retain a sample of trajectories for the spaghetti chart.
@@ -393,7 +423,10 @@
     keepSet.forEach((i) => {
       const c = cycles[i];
       sampleSeries.push({
-        startYear: c.startYear, series: c.series, realSeries: c.realSeries, success: c.success,
+        // failedYear travels with success: "it failed" and "when" are only
+        // useful together, and callers ranking cycles need both.
+        startYear: c.startYear, series: c.series, realSeries: c.realSeries,
+        success: c.success, failedYear: c.failedYear,
         endValue: c.endValue, role: i === worst ? "worst" : i === best ? "best" : i === medianIdx ? "median" : "",
       });
     });
