@@ -76,6 +76,35 @@ var rSafe = H({ spending: { strategy: "constant", initial: 30000 } });
 assert(rSafe.successRate === 1 && rSafe.lowestReal.min > 0,
   "an all-surviving plan's worst trough stays above $0 (min $" + Math.round(rSafe.lowestReal.min) + ")");
 
+// 5b2) incomeFloor: the risk a self-limiting strategy actually carries. Its
+// success rate is ~always 100% (it spends a share of what it holds, so it
+// can't hit zero) -- which made a reckless 8%/yr plan score the same perfect
+// green as a sane 4% one. The floor ratio must separate them.
+(function () {
+  var p4 = H({ spending: { strategy: "percent", percent: 0.04 } });
+  var p8 = H({ spending: { strategy: "percent", percent: 0.08 } });
+  assert(p4.successRate === 1 && p8.successRate === 1,
+    "both percentage plans still show 100% 'success' (the metric that misleads)");
+  assert(p4.spending.incomeFloor && p8.spending.incomeFloor, "incomeFloor is reported for percentage plans");
+  assert(p8.spending.incomeFloor.p10 < p4.spending.incomeFloor.p10,
+    "8%/yr has a WORSE rough-case income floor than 4%/yr (" +
+    Math.round(p8.spending.incomeFloor.p10 * 100) + "% vs " + Math.round(p4.spending.incomeFloor.p10 * 100) + "% of year one)");
+  assert(p8.spending.incomeFloor.p10 < 0.5,
+    "the 8%/yr plan's floor lands in the red band (<50% of year one), so the headline can't call it safe");
+  // Ratios are shares of year one: bounded, ordered, and 1.0 when income never dips.
+  ["median", "p10", "min"].forEach(function (k) {
+    assert(p4.spending.incomeFloor[k] > 0 && p4.spending.incomeFloor[k] <= 1.0001,
+      "incomeFloor." + k + " is a fraction of year one (" + p4.spending.incomeFloor[k].toFixed(3) + ")");
+  });
+  assert(p4.spending.incomeFloor.min <= p4.spending.incomeFloor.p10 + 1e-9 &&
+         p4.spending.incomeFloor.p10 <= p4.spending.incomeFloor.median + 1e-9,
+    "incomeFloor percentiles are ordered min <= p10 <= median");
+  // A constant-dollar plan never cuts spending, so its floor is exactly year one.
+  var cst = H({ spending: { strategy: "constant", initial: 30000 } });
+  assert(Math.abs(cst.spending.incomeFloor.median - 1) < 1e-9,
+    "constant-dollar spending never dips: floor == 100% of year one");
+})();
+
 // 5c) Representative cycles are ranked on REAL ending value, so the Worst/Best
 // case blocks agree with the Minimum/Maximum stats shown beside them and the
 // chart's highlighted lines really are the extremes of the displayed (real)

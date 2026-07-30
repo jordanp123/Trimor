@@ -30,6 +30,34 @@ A(/^Updated \d{4}-\d{2}-\d{2}$/.test(document.getElementById("buildStamp").textC
 A(document.getElementById("buildStamp").title.indexOf(SWR_DATA.meta.generated) >= 0,
   "build stamp tooltip carries the data vintage");
 
+// Data-health banner: silent when the shipped data verified clean, loud when it
+// did not. A warning that never fires is as useless as one that always does, so
+// both directions are pinned by injecting a failed check and re-rendering.
+(function () {
+  var box = document.getElementById("dataWarning");
+  A(box.hidden === true, "data-health banner hidden when the build's checks passed");
+  var savedV = SWR_DATA.meta.validation, savedC = SWR_CAPE && SWR_CAPE.latest && SWR_CAPE.latest.source;
+  SWR_DATA.meta.validation = [{ name: "BLS CPI cross-check", status: "diverged",
+    detail: "Our 2025 inflation differs from the BLS by 0.50 percentage points." }];
+  SWR.ui.renderDataHealth();
+  A(box.hidden === false, "banner appears when a cross-check diverged");
+  A(textOf(box).indexOf("0.50 percentage points") >= 0, "banner states the specific problem");
+  A(textOf(box).indexOf("Simulations still run normally") >= 0,
+    "banner distinguishes a data-verification issue from a maths error");
+  // A degraded CAPE source (ERN sheet unreachable) must surface too.
+  SWR_DATA.meta.validation = [];
+  if (SWR_CAPE && SWR_CAPE.latest) {
+    SWR_CAPE.latest.source = "computed (ERN sheet unavailable)";
+    SWR.ui.renderDataHealth();
+    A(box.hidden === false && textOf(box).indexOf("own estimate") >= 0,
+      "banner also surfaces a CAPE fallback to a computed estimate");
+    SWR_CAPE.latest.source = savedC;
+  }
+  SWR_DATA.meta.validation = savedV;
+  SWR.ui.renderDataHealth();
+  A(box.hidden === true, "banner hides again once the checks pass");
+})();
+
 // Integration: drive the real ui.js "Find max spending, using Monte Carlo" path.
 // Worker is undefined in this shim, so solve() takes its inline fallback -- which
 // runs the same applySolve()/run() machinery the worker's solveResult triggers.
@@ -49,6 +77,11 @@ A(/^[1-9]\d{5}$/.test(document.getElementById("mcSeed").value),
   "MC seed randomized on load (" + document.getElementById("mcSeed").value + ")");
 
 var spendBefore = document.getElementById("initialSpend").value;
+// The solver defaults to 95%, not 100%: targeting 100% fits the plan to the
+// single worst historical sequence, which is overfitting, not safety.
+A(document.getElementById("targetSuccess").value === "95",
+  "solver target defaults to 95% (" + document.getElementById("targetSuccess").value + ")");
+
 var basisBtns = document.getElementById("solveBasis").querySelectorAll("button");
 fire(basisBtns[1], "click");                       // select "Monte Carlo" basis
 document.getElementById("targetSuccess").value = "90";
@@ -75,6 +108,21 @@ A(document.getElementById("initialSpend").value === "55,500",
   "solve writeback floors, never rounds up (" + document.getElementById("initialSpend").value + ")");
 A(document.getElementById("spendRateHint").textContent.indexOf("5.55") >= 0,
   "Initial-rate hint refreshed to the written-back value (" + document.getElementById("spendRateHint").textContent + ")");
+// Targeting 100% must carry the overfitting caveat next to the number itself.
+(function () {
+  function solveAt(t) {
+    document.getElementById("targetSuccess").value = String(t);
+    fire(document.getElementById("solveBtn"), "click");
+    var box = document.getElementById("solveResult");
+    var s = box.textContent || "";
+    (box.children || []).forEach(function (c) { s += c.textContent || ""; });
+    return s;
+  }
+  A(solveAt(100).indexOf("single worst stretch") >= 0,
+    "solving for 100% warns that it fits the worst single sequence");
+  A(solveAt(95).indexOf("single worst stretch") < 0,
+    "solving for 95% shows no such warning");
+})();
 SWR.core.solveSpending = _realSolve;
 
 // Integration: percent-of-portfolio guardrail solver. Set a ceiling, leave the
@@ -89,6 +137,41 @@ A(solvedFloor !== "" && unc(solvedFloor) > 0 && unc(solvedFloor) <= 60000,
 A(document.getElementById("gsolveResult").hidden === false &&
   document.getElementById("gsolveResult").children.length > 0, "guardrail result box shown with content");
 A(document.getElementById("strategy").value === "percent", "guardrail solve kept the percentage strategy");
+
+// The headline swaps for self-limiting strategies: a percentage plan cannot run
+// out, so showing "100% success" would be content-free. It must show the income
+// floor instead, and a reckless rate must NOT render as green.
+(function () {
+  function runWith(pct) {
+    document.getElementById("strategy").value = "percent";
+    document.getElementById("spendPercent").value = String(pct);
+    document.getElementById("spendFloor").value = ""; document.getElementById("spendCeiling").value = "";
+    fire(document.getElementById("inputs"), "submit");
+    return { big: document.getElementById("successBig").textContent,
+             cls: document.getElementById("successCard").className,
+             lbl: document.getElementById("successLabel").textContent };
+  }
+  var r4 = runWith(4), r8 = runWith(8);
+  A(/^\d+%$/.test(r4.big) && r4.lbl.indexOf("year-one income") >= 0,
+    "percentage plan headlines the income floor, not the success rate (" + r4.big + ")");
+  A(r4.lbl.indexOf("can't run out of money") >= 0,
+    "headline says plainly that the plan cuts income instead of running out");
+  // parseInt, not unc(): these read "21%" and a bare + on that is NaN.
+  A(parseInt(r8.big, 10) < parseInt(r4.big, 10),
+    "a reckless 8%/yr headline is worse than 4%/yr (" + r8.big + " vs " + r4.big + ")");
+  A(r8.cls.indexOf("bad") >= 0,
+    "the 8%/yr plan is coloured red (" + r8.cls.trim() + ")");
+  // ...and a sane 4% is amber, not red: bands that paint every reasonable plan
+  // red would just train people to ignore the colour.
+  A(r4.cls.indexOf("warn") >= 0,
+    "a 4%/yr plan is amber, not red (" + r4.cls.trim() + ")");
+  // Constant-dollar keeps the classic success-rate headline.
+  document.getElementById("strategy").value = "constant";
+  document.getElementById("initialSpend").value = "40000";
+  fire(document.getElementById("inputs"), "submit");
+  A(document.getElementById("successLabel").textContent.indexOf("lasted") >= 0,
+    "constant-dollar still headlines the success rate");
+})();
 
 // Integration: monthly withdrawal frequency (percentage strategy only). The
 // segmented control is wired, selecting Monthly updates the persisted hidden
@@ -180,6 +263,8 @@ A(rtxt.indexOf("Success rate") >= 0 && rtxt.indexOf("%") >= 0, "report carries t
 A(rtxt.indexOf("$12,000/yr") >= 0, "report shows the income amount");
 A(rpt.querySelectorAll("img").length >= 2, "report embeds chart snapshots (" + rpt.querySelectorAll("img").length + ")");
 A(rpt.querySelectorAll(".rpt-qr").length === 1, "report embeds the share-link QR figure");
+A(textOf(rpt).indexOf("contains your portfolio, spending and income figures") >= 0,
+  "printed QR warns that it encodes the user's financial figures");
 // When the payload exceeds QR capacity, dataURL returns null and the report
 // must still build with the text fallback and no QR figure.
 var _realQR = SWR.qr.dataURL;
@@ -195,7 +280,10 @@ SWR.qr.dataURL = _realQR;
 // (strategy, targetSuccess, the income row) must be present.
 var slim = decodeURIComponent(history._last.slice(1));
 A(slim.indexOf("mcSeed") >= 0, "slim hash always carries mcSeed");
-A(slim.indexOf("strategy") >= 0 && slim.indexOf("targetSuccess") >= 0 && slim.indexOf("inc") >= 0,
+// Assert on fields the tests above genuinely left non-default (strategy=cape,
+// spendPercent=8, an income row). targetSuccess and initialSpend are back AT
+// their defaults by this point, so omitting them is the correct behaviour.
+A(slim.indexOf("strategy") >= 0 && slim.indexOf("spendPercent") >= 0 && slim.indexOf("inc") >= 0,
   "slim hash carries the touched fields + flows");
 A(slim.indexOf("vpwReturn") < 0 && slim.indexOf("gkGuard") < 0 && slim.indexOf("allocGold") < 0 && slim.indexOf("adj") < 0,
   "slim hash omits untouched fields and empty flow lists");

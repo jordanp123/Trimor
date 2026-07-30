@@ -431,6 +431,15 @@
       el("strong", { text: money(spend) + " / yr" }),
       document.createTextNode(" (" + pctOfPort + "% of portfolio). Set as your spending plan above and re-ran — see the updated results."),
     );
+    // Targeting 100% doesn't buy certainty -- it fits your whole retirement to
+    // the single worst sequence in the sample (for a 30-year US plan, 1966).
+    // Say so where the number appears, not only in the Help panel.
+    if (target >= 0.9995) {
+      sr.appendChild(el("p", { class: "solve-note",
+        text: "Targeting 100% tunes your plan to the single worst stretch in the record — a handful of "
+            + "genuinely independent eras, half of them reconstructed pre-1928 data. It is a stress test, "
+            + "not a guarantee; 90–95% is the usual planning range." }));
+    }
     sr.hidden = false;
   }
 
@@ -579,18 +588,49 @@
         text: "Try a shorter retirement length, or an allocation with longer history — stocks/bonds reach back to 1871, while gold, cash, corporate bonds, real estate and small-cap begin in 1928." }));
       return;
     }
-    const pct = s.successRate * 100;
-    $("successBig").textContent = (pct >= 99.95 ? "100" : pct.toFixed(1)) + "%";
-    $("successCard").className = "success-card " + (s.successRate >= 0.95 ? "good" : s.successRate >= 0.75 ? "warn" : "bad");
     const unit = s.mode === "montecarlo" ? "trials" : "cycles";
-    let label = s.succeeded.toLocaleString() + " of " + s.total.toLocaleString() + " " + unit + " lasted " + s.years + " years";
-    if (s.startYears) label += " · retirements starting " + s.startYears.first + "–" + s.startYears.last;
-    $("successLabel").textContent = label;
+    const pct = s.successRate * 100;
+    // A percentage-of-portfolio, VPW or CAPE plan spends a share of what it
+    // still holds, so it CANNOT run out and its success rate is ~always 100% --
+    // an 8%/yr plan scores the same perfect green as a 4% one. For those the
+    // headline is the risk that actually exists: how far the income falls. The
+    // success rate stays visible in the stat cards (and matters again when a
+    // spending FLOOR is set, which can force over-spending into real ruin).
+    const floor = s.spending && s.spending.incomeFloor;
+    const selfLimiting = floor && ["percent", "vpw", "cape"].indexOf(s.spending.strategy) >= 0;
+    if (selfLimiting) {
+      const keep = floor.p10;                       // rough-case: 10th-percentile cycle
+      $("successBig").textContent = Math.round(keep * 100) + "%";
+      // Bands calibrated against real plans rather than picked round: a pure
+      // percentage plan halves its income in a bad sequence no matter how
+      // modest the rate (3% -> 55%, 4% -> 48%, 5% -> 41%), so those sit in
+      // amber -- a real caution, not an alarm. Red is reserved for plans that
+      // genuinely collapse (8% -> 21%), and green for ones that hold their
+      // income up, which in practice means setting a spending floor
+      // (4% + $30k floor -> 75%). Bands any tighter would paint every sane
+      // plan red, which teaches people to ignore the colour.
+      $("successCard").className = "success-card " + (keep >= 0.6 ? "good" : keep >= 0.4 ? "warn" : "bad");
+      let lbl = "of year-one income survives a rough case";
+      if (s.spending.leanestYear) lbl += " — spending fell to about " + money(s.spending.leanestYear.p10) + "/yr";
+      lbl += ". This plan can't run out of money; it cuts your income instead"
+        + (s.failed ? " — and " + s.failed + " of " + s.total.toLocaleString() + " " + unit + " still failed outright." : ".");
+      $("successLabel").textContent = lbl;
+    } else {
+      $("successBig").textContent = (pct >= 99.95 ? "100" : pct.toFixed(1)) + "%";
+      $("successCard").className = "success-card " + (s.successRate >= 0.95 ? "good" : s.successRate >= 0.75 ? "warn" : "bad");
+      let label = s.succeeded.toLocaleString() + " of " + s.total.toLocaleString() + " " + unit + " lasted " + s.years + " years";
+      if (s.startYears) label += " · retirements starting " + s.startYears.first + "–" + s.startYears.last;
+      $("successLabel").textContent = label;
+    }
 
     $("headStats").replaceChildren(
       statCard(s.mode === "montecarlo" ? "Trials" : "Historical cycles", s.total.toLocaleString()),
-      statCard("Median end (real)", money(s.endingReal.median)),
-      statCard("10th pct (real)", money(s.endingReal.p10)),
+      selfLimiting
+        ? statCard("Money lasted", (pct >= 99.95 ? "100" : pct.toFixed(1)) + "%")
+        : statCard("Median end (real)", money(s.endingReal.median)),
+      selfLimiting && s.spending.leanestYear
+        ? statCard("Typical leanest yr", money(s.spending.leanestYear.median))
+        : statCard("10th pct (real)", money(s.endingReal.p10)),
       statCard("Failures", String(s.failed))
     );
 
@@ -694,8 +734,13 @@
     SWR.charts.richBrokeDead($("rbdCanvas"), { years: s.years, survival, brokeByYear: s.brokeByYear, startAge: age });
     const le = SWR.mortality.lifeExpectancy(age, sex);
     const deadByEnd = (1 - (survival[s.years] || 0)) * 100;
-    $("rbdSub").textContent = "SSA life table · life expectancy ≈ age " + Math.round(age + le) +
-      " · " + deadByEnd.toFixed(0) + "% chance deceased by year " + s.years;
+    // Say which table this is and which way it errs. A PERIOD table freezes
+    // today's age-specific death rates forever; real cohorts keep benefiting
+    // from mortality improvement, so it overstates dying and therefore
+    // understates longevity risk -- the direction that flatters a plan.
+    $("rbdSub").textContent = "SSA period life table · life expectancy ≈ age " + Math.round(age + le) +
+      " · " + deadByEnd.toFixed(0) + "% chance deceased by year " + s.years +
+      " · likely conservative: period tables ignore future mortality improvement";
   }
 
   function redrawCharts() {
@@ -934,6 +979,14 @@
       if (sp.leanestYear && sp.leanestYear.p10 < sp.leanestYear.median * 0.98) {
         rptKV(sec, "Leanest year (typical / rough case)", fmtExact(sp.leanestYear.median) + " / " + fmtExact(sp.leanestYear.p10));
       }
+      // For self-limiting strategies the success rate is ~always 100%, so the
+      // report states the income risk in the same breath rather than letting
+      // "100%" stand alone on paper.
+      if (sp.incomeFloor && ["percent", "vpw", "cape"].indexOf(sp.strategy) >= 0) {
+        rptKV(sec, "Income floor vs year one (typical / rough case)",
+          Math.round(sp.incomeFloor.median * 100) + "% / " + Math.round(sp.incomeFloor.p10 * 100) +
+          "% — this plan cuts income rather than running out");
+      }
       if (sp.avgMedian) rptKV(sec, "Average yearly spending (median cycle)", fmtExact(sp.avgMedian));
     }
     rpt.appendChild(sec);
@@ -1020,7 +1073,12 @@
     if (qrURI) {
       const qfig = el("figure", { class: "rpt-qr" });
       qfig.appendChild(el("img", { src: qrURI, alt: "QR code of the share link for this simulation" }));
-      qfig.appendChild(el("figcaption", { text: "Scan to reopen this simulation with every input restored." }));
+      // The QR encodes the whole share link, i.e. every figure on this page.
+      // Printing makes that portable in a way a browser URL is not, so the
+      // caption has to say so -- the on-screen Copy-link button already warns.
+      qfig.appendChild(el("figcaption", { text: "Scan to reopen this simulation with every input restored. "
+        + "Note: this code contains your portfolio, spending and income figures — treat this page as you "
+        + "would any financial statement." }));
       foot.appendChild(qfig);
     }
     foot.appendChild(el("p", { class: "rpt-vintage", text: "All inputs needed to reproduce this simulation, including the Monte Carlo seed, are listed above." }));
@@ -1131,6 +1189,40 @@
     } else {
       msg("Run a simulation first — there are no results to report.", false);
     }
+  }
+
+  // ---------- data health ----------
+  // The pipeline's cross-checks ship inside the data (DATA.meta.validation), and
+  // the CAPE build records whether it used ERN's published sheet or fell back to
+  // its own computation. Anything less than fully verified is stated on the page:
+  // a validation that only ever reaches a server log is one nobody acts on.
+  function renderDataHealth() {
+    const box = $("dataWarning");
+    if (!box) return;
+    const problems = [];
+    const checks = (DATA && DATA.meta && DATA.meta.validation) || [];
+    for (let i = 0; i < checks.length; i++) {
+      const c = checks[i];
+      if (c && c.status && c.status !== "ok") problems.push(c.detail || c.name);
+    }
+    // CAPE: a "computed" source means ERN's sheet was unreachable/stale/divergent.
+    if (CAPE && CAPE.latest && CAPE.latest.source && CAPE.latest.source.indexOf("ERN") !== 0) {
+      problems.push("The current CAPE is this tool's own estimate — the published source it "
+        + "normally cross-checks against was unavailable. Only the CAPE-based strategy uses it.");
+    }
+    if (!problems.length) { box.hidden = true; box.replaceChildren(); return; }
+    const kids = [el("strong", { text: "Data check: " }),
+      document.createTextNode(problems.length === 1
+        ? "one of this build's data checks did not pass."
+        : problems.length + " of this build's data checks did not pass.")];
+    const ul = el("ul");
+    problems.forEach((t) => ul.appendChild(el("li", { text: t })));
+    kids.push(ul);
+    kids.push(el("p", { class: "small", text:
+      "Simulations still run normally — this is about how well the underlying data was verified "
+      + "on " + ((DATA.meta && DATA.meta.generated) || "this build") + ", not about the maths." }));
+    box.replaceChildren.apply(box, kids);
+    box.hidden = false;
   }
 
   // ---------- deployment stamp ----------
@@ -1248,10 +1340,15 @@
     $("mcSeed").value = String(100000 + Math.floor(Math.random() * 900000));
     loadHash();
     MONEY_IDS.forEach((id) => formatMoneyInput($(id))); // defaults + hash values get commas
-    stampBuild();
+    stampBuild(); renderDataHealth();
     syncStrategy(); syncFreq(); updateAllocSum(); toggleFixed(); toggleMcOptions(); toggleMcBlock();
     run();
   }
+
+  // Minimal test hook: lets the headless suite inject a failed data check and
+  // assert the banner actually reacts (a warning nobody can test is a warning
+  // nobody can trust). Read-only rendering; nothing here mutates state.
+  SWR.ui = { renderDataHealth };
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();

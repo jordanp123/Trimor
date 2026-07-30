@@ -310,7 +310,14 @@
     // Spending in today's dollars, pooled across all funded cycle-years (most
     // useful for variable strategies, where the draw swings with the market).
     // Years after ruin are excluded (you're not spending from an empty account).
-    const allSpend = [], worstPer = [], avgPer = [];
+    // floorRatio: each cycle's leanest year as a FRACTION of that cycle's own
+    // first year. This is the risk a percentage/VPW/CAPE plan actually carries:
+    // it cannot run out of money (so its success rate is ~always 100% and says
+    // nothing), but it can cut your income to a fraction of what you started
+    // with. Expressed as a ratio so it reads the same whether year one was
+    // $40k or $400k, and per-cycle so a CAPE plan's varying first year is
+    // compared against itself.
+    const allSpend = [], worstPer = [], avgPer = [], floorRatio = [];
     for (let c = 0; c < total; c++) {
       const rw = cycles[c].realWithdrawals;
       const funded = cycles[c].failedYear >= 0 ? cycles[c].failedYear : N;
@@ -321,11 +328,15 @@
         if (v < mn) mn = v;
         sum += v; cnt++;
       }
-      if (cnt) { worstPer.push(mn); avgPer.push(sum / cnt); }
+      if (cnt) {
+        worstPer.push(mn); avgPer.push(sum / cnt);
+        if (rw[0] > 0) floorRatio.push(mn / rw[0]);
+      }
     }
     allSpend.sort((a, b) => a - b);
     worstPer.sort((a, b) => a - b);
     avgPer.sort((a, b) => a - b);
+    floorRatio.sort((a, b) => a - b);
     // First-year spend can differ per cycle (the CAPE rule reads each start
     // year's own valuation), so expose the spread: the UI shows a range when
     // min<max instead of pretending one cycle's number speaks for all.
@@ -342,6 +353,11 @@
       firstYearMax: total ? fyMax : 0,
       annual: allSpend.length ? bucket(allSpend) : null,
       leanestYear: worstPer.length ? { median: pctl(worstPer, 50), p10: pctl(worstPer, 10) } : null,
+      // Leanest year as a share of year one: median = typical, p10 = rough case,
+      // min = the worst cycle in the sample. 1 means income never dipped.
+      incomeFloor: floorRatio.length
+        ? { median: pctl(floorRatio, 50), p10: pctl(floorRatio, 10), min: floorRatio[0] }
+        : null,
       avgMedian: avgPer.length ? pctl(avgPer, 50) : 0,
     };
 

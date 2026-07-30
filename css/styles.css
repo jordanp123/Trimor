@@ -239,6 +239,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 [data-theme="dark"] .solve-result { background: rgba(79, 134, 255, 0.12); border-color: rgba(79, 134, 255, 0.42); }
 /* Error variant (infeasible guardrail solve, bad input). */
 .solve-result.err { background: rgba(226, 72, 61, 0.10); border-color: rgba(226, 72, 61, 0.40); }
+/* Caveat under a solved number (e.g. what targeting 100% really means). */
+.solve-note { margin: 6px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--ink-soft); }
 .solve-result.err strong { color: var(--bad); }
 [data-theme="dark"] .solve-result.err { background: rgba(226, 72, 61, 0.14); border-color: rgba(226, 72, 61, 0.45); }
 /* Guardrail "work back" solver sits just under the floor/ceiling inputs. */
@@ -293,6 +295,16 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; font-weight: 600; }
 .tag.ok { background: rgba(21, 160, 106, 0.14); color: var(--good); }
 .tag.no { background: rgba(226, 72, 61, 0.14); color: var(--bad); }
+/* Data-health banner (hidden unless a cross-check failed). Amber rather than
+   red: the numbers still compute, they just are not independently verified. */
+.data-warning {
+  margin: 16px 2px 0; padding: 10px 12px; border-radius: 10px; font-size: 12.5px; line-height: 1.5;
+  background: rgba(230, 149, 0, 0.10); border: 1px solid rgba(230, 149, 0, 0.42); color: var(--ink);
+}
+.data-warning strong { color: var(--warn); }
+.data-warning ul { margin: 6px 0 0; padding-left: 18px; }
+.data-warning li { margin: 2px 0; }
+
 .disclaimer { margin: 16px 2px 0; font-size: 11.5px; color: var(--ink-soft); line-height: 1.5; }
 /* Deployment stamp: its own right-aligned line under the disclaimer text, so a
    bug report can say which build it came from. Tabular numerals keep the date

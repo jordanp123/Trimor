@@ -107,10 +107,14 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 _OPENER = urllib.request.build_opener(_NoRedirect())
 
 
-def fetch(url, cache_name, refresh):
+def fetch(url, cache_name, refresh, optional=False):
     """Return text of url, caching under tools/.cache ONLY (repo-local). Never a
     world-writable dir like /tmp, where any local process could plant a file the
-    pipeline would silently trust."""
+    pipeline would silently trust.
+
+    optional=True returns None instead of aborting: for a cross-check source,
+    an outage must not block a deploy of otherwise-good data -- it downgrades
+    the run to "unverified", which the site then says out loud."""
     os.makedirs(CACHE, exist_ok=True)
     path = os.path.join(CACHE, cache_name)
     if not refresh and os.path.exists(path):
@@ -125,6 +129,9 @@ def fetch(url, cache_name, refresh):
             with _OPENER.open(req, timeout=60) as r:  # TLS verified by default; keep it that way
                 data = r.read(MAX_FETCH_BYTES + 1)
             if len(data) > MAX_FETCH_BYTES:
+                if optional:
+                    print(f"  [warn]  {cache_name} sent more than {MAX_FETCH_BYTES} bytes; ignoring.")
+                    return None
                 sys.exit(f"FATAL: {url} sent more than {MAX_FETCH_BYTES} bytes; refusing.")
             raw = data.decode("utf-8", errors="replace")
             with open(path, "w", encoding="utf-8") as f:
@@ -134,6 +141,9 @@ def fetch(url, cache_name, refresh):
             last = e
             if attempt < FETCH_RETRIES:
                 time.sleep(2 * attempt)
+    if optional:
+        print(f"  [warn]  could not fetch {url}: {last!r}")
+        return None
     sys.exit(f"FATAL: could not fetch {url} after {FETCH_RETRIES} attempts: {last!r}")
 
 
@@ -295,6 +305,109 @@ def crosscheck(price, dyield, cpi, tnx, years, series, infl):
         sys.exit("FATAL: extension methodology no longer matches Damodaran -- source format may have changed.")
 
 
+# Published Dec-to-Dec CPI-U (all items, NSA) as released by the BLS, hand
+# transcribed. These are ground truth this pipeline does NOT download.
+#
+# Why they matter: crosscheck() already compares multpl's by-year CPI page
+# against its by-month one, but BOTH come from multpl -- if that site served a
+# wrong or rebased series, the two pages would agree with each other and the
+# check would pass while we shipped bad inflation. Inflation is load-bearing
+# here (every "today's dollars" figure divides by it), so it gets an anchor
+# that is independent of the source. Tolerance is 0.15pp because the published
+# rates are rounded to 0.1pp and our value comes from dividing index levels.
+CPI_ANCHORS = {
+    1974: 0.123,   # oil shock
+    1979: 0.133,   # peak of the Great Inflation
+    1980: 0.125,
+    2008: 0.001,   # GFC, essentially flat
+    2009: 0.027,
+    2021: 0.070,
+    2022: 0.065,
+}
+CPI_ANCHOR_TOL = 0.0015
+
+
+# The BLS's own public API for CUUR0000SA0 -- CPI-U, all items, NSA: the exact
+# series multpl republishes, straight from the agency that computes it. v1 needs
+# no key and ignores date ranges, returning roughly the last three years; that
+# is the right window anyway, since a rebase or a scrape/format break upstream
+# shows up in the newest data first. Verified reachable with plain urllib (FRED,
+# which we abandoned, tarpits it).
+BLS_URL = "https://api.bls.gov/publicAPI/v1/timeseries/data/CUUR0000SA0"
+BLS_TOL = 0.002  # 0.2pp: index levels get revised/rounded; only flag real drift
+
+
+def bls_crosscheck(years, inflation, refresh):
+    """Soft cross-check of recent inflation against the BLS itself.
+
+    Returns a status dict recorded into the emitted data so the SITE can say
+    when its figures are unverified -- a check that only ever whispers into a
+    log is not a check anyone acts on. Never aborts: multpl stays the source of
+    record, and a BLS outage must not block an otherwise-good deploy.
+    """
+    raw = fetch(BLS_URL, "bls_cpi.json", refresh, optional=True)
+    if raw is None:
+        return {"name": "BLS CPI cross-check", "status": "unavailable",
+                "detail": "The BLS API could not be reached, so this run's inflation figures "
+                          "come from a single source and were not independently verified."}
+    try:
+        doc = json.loads(raw)
+        if doc.get("status") != "REQUEST_SUCCEEDED":
+            raise ValueError(doc.get("status", "unknown status"))
+        dec = {}
+        for s in doc["Results"]["series"]:
+            for row in s["data"]:
+                if row["periodName"] == "December":
+                    v = float(row["value"])
+                    if math.isfinite(v) and v > 0:
+                        dec[int(row["year"])] = v
+    except (ValueError, KeyError, TypeError) as e:
+        return {"name": "BLS CPI cross-check", "status": "unavailable",
+                "detail": f"The BLS API response could not be read ({e}); inflation was not "
+                          "independently verified this run."}
+
+    idx = {y: i for i, y in enumerate(years)}
+    worst_y, worst_d, compared = None, 0.0, 0
+    for y in sorted(dec):
+        if y - 1 not in dec or y not in idx or inflation[idx[y]] is None:
+            continue
+        d = abs((dec[y] / dec[y - 1] - 1) - inflation[idx[y]])
+        compared += 1
+        if d > worst_d:
+            worst_d, worst_y = d, y
+    if not compared:
+        return {"name": "BLS CPI cross-check", "status": "unavailable",
+                "detail": "The BLS API returned no overlapping December values to compare."}
+    if worst_d > BLS_TOL:
+        return {"name": "BLS CPI cross-check", "status": "diverged",
+                "detail": f"Our {worst_y} inflation differs from the BLS by "
+                          f"{worst_d * 100:.2f} percentage points. Inflation-adjusted "
+                          "(today's-dollar) figures may be off until this is resolved."}
+    return {"name": "BLS CPI cross-check", "status": "ok",
+            "detail": f"{compared} recent year(s) matched the BLS within {worst_d * 100:.2f}pp."}
+
+
+def cpi_anchors(years, inflation):
+    """Guard: the inflation series must match published BLS CPI-U rates."""
+    idx = {y: i for i, y in enumerate(years)}
+    ok, worst = True, 0.0
+    for y, want in sorted(CPI_ANCHORS.items()):
+        if y not in idx:
+            continue
+        got = inflation[idx[y]]
+        d = abs(got - want)
+        worst = max(worst, d)
+        if d > CPI_ANCHOR_TOL:
+            ok = False
+            print(f"  [FAIL] CPI {y}: {got * 100:.2f}% vs published {want * 100:.1f}% "
+                  f"(off by {d * 100:.2f}pp, tolerance {CPI_ANCHOR_TOL * 100:.2f}pp)")
+    if not ok:
+        sys.exit("FATAL: inflation disagrees with published BLS CPI-U anchors -- the upstream "
+                 "CPI source may have changed, rebased or broken; refusing to ship it.")
+    print(f"  [PASS] {len(CPI_ANCHORS)} published CPI-U anchors matched "
+          f"(worst {worst * 100:.2f}pp, tolerance {CPI_ANCHOR_TOL * 100:.2f}pp)")
+
+
 def sanity(years, series, inflation):
     """Loud assertions so a corrupted download cannot silently ship."""
     idx = {y: i for i, y in enumerate(years)}
@@ -331,10 +444,14 @@ def sanity(years, series, inflation):
         sys.exit("FATAL: sanity checks failed -- not writing data.")
 
 
-def emit(years, series, inflation):
+def emit(years, series, inflation, validation=None):
     payload = {
         "meta": {
             "generated": date.today().isoformat(),
+            # Cross-check results travel WITH the data so the app can tell the
+            # reader when a figure is unverified or disputed, instead of that
+            # only existing in a server log.
+            "validation": validation or [],
             "sources": {
                 "returns_1928+": DAM_URL + "  (Aswath Damodaran, NYU Stern; authoritative annual totals)",
                 "inflation_1928+": CPI_URL + "  (multpl.com; BLS CPI-U CPIAUCNS series, Dec->Dec)",
@@ -426,10 +543,19 @@ def main():
     inflation = [ext["inflation"][y] for y in ext_yrs] + [infl_cpi[y] for y in years28]
 
     print(f"Merged {len(years)} years: {years[0]}-{years[-1]}")
+    print("Independent CPI check (published BLS rates, not a downloaded source):")
+    cpi_anchors(years, inflation)
     print("Sanity checks:")
     sanity(years, series, inflation)
 
-    js_path, json_path, _ = emit(years, series, inflation)
+    # Soft cross-check LAST: it never blocks a deploy, it annotates one. The
+    # result ships with the data and the site surfaces anything but "ok".
+    print("Live cross-check against the BLS API (advisory -- never blocks):")
+    validation = [bls_crosscheck(years, inflation, refresh)]
+    for v in validation:
+        print(f"  [{v['status'].upper()}] {v['name']}: {v['detail']}")
+
+    js_path, json_path, _ = emit(years, series, inflation, validation)
     print("\nWrote:")
     print(" ", os.path.relpath(js_path, ROOT))
     print(" ", os.path.relpath(json_path, ROOT))

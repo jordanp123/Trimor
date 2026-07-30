@@ -256,7 +256,7 @@
         <button id="runBtn" class="primary" type="submit">Run simulation</button>
         <div class="solver">
           <button id="solveBtn" class="secondary" type="button">Find max spending for</button>
-          <div class="suffixed compact"><input id="targetSuccess" type="number" min="1" max="100" step="1" value="100" /><span>%</span></div>
+          <div class="suffixed compact"><input id="targetSuccess" type="number" min="1" max="100" step="1" value="95" /><span>%</span></div>
           <span class="solver-tail">success, using</span>
           <div class="seg" id="solveBasis" role="tablist">
             <button type="button" data-basis="historical" class="seg-on">Historical</button>
@@ -333,6 +333,11 @@
           <p class="muted">Results and representative cycles appear here after a run.</p>
         </div>
       </section>
+
+      <!-- Data-health banner: shown only when a cross-check failed or a source
+           was unavailable, so a data problem is visible to readers instead of
+           living in a server log. Filled by ui.js from the pipeline's results. -->
+      <div id="dataWarning" class="data-warning" role="status" hidden></div>
 
       <p class="disclaimer">
         Educational tool, not financial advice. Past returns do not predict the future.
@@ -507,6 +512,7 @@
 
         <h3>Will your money outlast you?</h3>
         <p>Set your age and sex, and the “Rich, broke, or dead?” chart layers SSA life-table survival odds onto your simulation: for each year it shows the chance you’re <strong>alive with money</strong>, <strong>alive but broke</strong>, or <strong>deceased</strong>. Often you’re far more likely to pass away with money left over than to run out of it.</p>
+        <p class="small"><strong>A caveat that runs one way.</strong> This uses the SSA <em>period</em> life table — a snapshot that applies today’s death rates at each age to every future year. Real cohorts keep benefiting from medical progress, so a <em>cohort</em> table (what actuaries use for exactly this question) would show you living longer. The practical effect: this chart somewhat <strong>overstates your chance of dying</strong> and therefore <strong>understates longevity risk</strong> — it errs toward making a plan look safer, especially if you’re decades from retirement. Treat the “deceased” band as a floor, not a forecast.</p>
 
         <h3>Loan calculator</h3>
         <p>The <strong>Loan calc</strong> tab (top right) amortizes any fixed-rate loan — mortgage, car, student loan. It shows the monthly payment, total interest, payoff time, and how extra monthly principal shortens the loan and cuts interest.</p>
