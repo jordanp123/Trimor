@@ -235,13 +235,31 @@ it can answer the tunnel and nothing else. That is worth proving rather than
 assuming, especially after a migration (the rootless network stack is netavark,
 not Docker's bridge, so an earlier check doesn't carry over):
 
+A bare "did it fail?" check is not enough: a probe that never ran produces the
+same non-zero exit as a blocked one. So this runs a **positive control first**
+(the container's own port, which must succeed) and reports elapsed seconds for
+both. It also targets a raw IP rather than a URL — that keeps DNS failure from
+masquerading as a routing failure, and leaves nothing for a terminal to mangle
+into a markdown link.
+
 ```sh
-# Must FAIL or time out. If it returns a page, the internal network isn't holding.
-podman exec WebSWR wget -T3 -qO- https://example.com ; echo "exit=$?"
+podman exec WebSWR sh -c 'S=$(date +%s); nc -z -w3 127.0.0.1 8080; A=$?; M=$(date +%s); nc -z -w3 1.1.1.1 443; B=$?; E=$(date +%s); echo "own-port(control): exit=$A in $((M-S))s | internet: exit=$B in $((E-M))s"' 2>&1
 
 # ...while the site itself keeps serving through the tunnel:
 curl -sI https://your.domain/webswr/ | head -1
 ```
+
+Reading the result:
+
+| own-port (control) | internet | verdict |
+| --- | --- | --- |
+| `exit=0` | `exit=1` in 0s | **Pass, strongest form** — no route exists, so the kernel refused immediately (`ENETUNREACH`) and no packet was sent |
+| `exit=0` | `exit=1` in ~3s | **Pass** — packets were emitted and silently dropped downstream |
+| `exit=1` | anything | **Void** — `nc` is missing or `-z` unsupported here; the probe never ran, so the second column means nothing |
+| anything | `exit=0` | **Fail** — nginx has a route off the host |
+
+For proof by configuration rather than by probe, `podman exec WebSWR ip route`
+should show **no `default` line** at all.
 
 Worth re-running whenever Podman, the host kernel, or the network config
 changes. A few more one-liners for the same reason:
