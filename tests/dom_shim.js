@@ -136,15 +136,16 @@ var DEFAULTS = {
   inflationMode: { type: "select-one", value: "cpi" }, fixedInflation: { type: "number", value: "3" },
   taxRate: { type: "number", value: "0" },
   runMonteCarlo: { type: "checkbox", checked: true }, // forced on to exercise the MC path
-  mcMethod: { type: "select-one", value: "bootstrap" }, mcTrials: { type: "number", value: "2000" },
-  mcBlock: { type: "number", value: "5" }, mcSeed: { type: "number", value: "" }, // seed is blank in HTML; init() randomizes it
+  mcMethod: { type: "select-one", value: "varblock" }, mcTrials: { type: "number", value: "2000" },
+  mcBlock: { type: "number", value: "5" },
+  mcBlockMin: { type: "number", value: "2" }, mcBlockMax: { type: "number", value: "8" }, mcSeed: { type: "number", value: "" }, // seed is blank in HTML; init() randomizes it
   targetSuccess: { type: "number", value: "95" }, gsolveTarget: { type: "number", value: "95" },
   withdrawFreqVal: { type: "hidden", value: "annual" }, // percentage monthly-payout toggle (hidden input backs the seg control)
 };
 // Non-input element ids that exist in index.html.
 var KNOWN = {};
 ["themeBtn", "helpBtn", "helpOverlay", "helpClose", "helpTitle", "inputs", "allocSum", "spendRateHint", "fixedInflationWrap", "fixedInflationHint", "incomeRows", "addIncome",
- "adjustRows", "addAdjust", "mcOptions", "mcBlockWrap", "runBtn", "solveBtn", "shareBtn",
+ "adjustRows", "addAdjust", "mcOptions", "mcBlockWrap", "mcVarBlockWrap", "mcVarBlockHint", "runBtn", "solveBtn", "shareBtn",
  "capeRateNow", "withdrawFreq", "withdrawFreqHint", "printBtn", "report", "buildStamp", "dataWarning",
  "resetBtn", "solveBasis", "solveResult", "gsolveBtn", "gsolveBasis", "gsolveResult", "formMsg", "results", "successCard", "successKind", "successBig", "successLabel", "headStats",
  "progressWrap", "progressBar", "progressLabel", "trajMode", "dollarMode", "trajUnit", "trajCanvas", "histCanvas",

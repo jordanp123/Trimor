@@ -236,7 +236,8 @@
               <label for="mcMethod">Method</label>
               <select id="mcMethod">
                 <option value="bootstrap">Bootstrap (resample years)</option>
-                <option value="block">Block bootstrap (preserve streaks)</option>
+                <option value="varblock" selected>Block bootstrap (variable streaks)</option>
+                <option value="block">Block bootstrap (fixed streaks)</option>
                 <option value="parametric">Parametric (normal)</option>
               </select>
             </div>
@@ -245,6 +246,11 @@
               <input id="mcTrials" type="number" min="100" max="50000" step="100" value="10000" />
             </div>
           </div>
+          <div class="row2" id="mcVarBlockWrap">
+            <div class="field"><label for="mcBlockMin">Shortest streak <span class="hint">years</span></label><input id="mcBlockMin" type="number" min="1" max="30" step="1" value="2" /></div>
+            <div class="field"><label for="mcBlockMax">Longest streak <span class="hint">years</span></label><input id="mcBlockMax" type="number" min="1" max="30" step="1" value="8" /></div>
+          </div>
+          <p class="hint" id="mcVarBlockHint">Each resampled run of consecutive years gets its own length, drawn at random between these two. A fixed length imposes a rhythm history doesn't have; a range mixes short shocks and long regimes. The default 2–8 averages 5 years, matching the fixed-length option.</p>
           <div class="row2">
             <div class="field" id="mcBlockWrap" hidden><label for="mcBlock">Block length (years)</label><input id="mcBlock" type="number" min="1" max="20" step="1" value="5" /></div>
             <div class="field"><label for="mcSeed">Random seed <span class="hint">reproducible — new each load</span></label><input id="mcSeed" type="number" min="0" step="1" /></div>
@@ -484,7 +490,8 @@
         <h3>Historical vs Monte Carlo</h3>
         <ul>
           <li><strong>Historical</strong> replays every actual sequence of returns since 1871 — a 30-year plan is tested starting in 1871, 1872, … 1996.</li>
-          <li><strong>Monte Carlo</strong> builds thousands of synthetic futures: <em>Bootstrap</em> draws random past years; <em>Block bootstrap</em> draws runs of consecutive years (keeps bad streaks intact); <em>Parametric</em> samples a normal distribution fit to history. Bootstrap is usually the toughest test.</li>
+          <li><strong>Monte Carlo</strong> builds thousands of synthetic futures: <em>Bootstrap</em> draws random past years; <em>Block bootstrap (variable streaks)</em> — the default — draws runs of consecutive years, redrawing each run's length between your Shortest and Longest settings; <em>Block bootstrap (fixed streaks)</em> uses one length for every run; <em>Parametric</em> samples a normal distribution fit to history.
+            <br />Streak length matters more than it looks, and in the opposite direction to most people's guess. Real markets tend to <em>mean-revert</em> — bad years are often followed by recovery — so chopping history into single years destroys that recovery and invents long slumps that never happened. Drawing single years is therefore <em>harsher</em> than the historical record itself (about 93% success on a 4% plan, against 97.6% historically), while longer streaks keep more real sequence and land closer to history (12–20 year runs give about 96%). The 2–8 default sits in between deliberately. Bootstrap remains the toughest test; the block methods are the more realistic ones.</li>
         </ul>
         <p class="small"><strong>A caveat on the success rate.</strong> Historical cycles overlap — a 30-year window starting in 1965 shares 29 of its years with the 1966 one — so 126 cycles reflect only a handful of truly independent eras, and the failures cluster around a few bad episodes (1906, 1929, the late-1960s stagflation). Treat the number as a stress-test against everything markets have actually done, not as a probability with decimal-point precision.</p>
 

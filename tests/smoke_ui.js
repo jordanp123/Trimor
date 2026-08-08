@@ -251,6 +251,35 @@ A(document.getElementById("strategy").value === "percent", "guardrail solve kept
     "constant-dollar still headlines the success rate");
 })();
 
+// Variable-length block bootstrap: the new default MC method. Its two streak
+// fields must show only for that method, and contradictory bounds must be
+// refused rather than silently swapped (same rule as the spending floor/ceiling).
+(function () {
+  var meth = document.getElementById("mcMethod");
+  A(meth.value === "varblock", "variable-streak block bootstrap is the default method (" + meth.value + ")");
+  A(document.getElementById("mcVarBlockWrap").hidden === false &&
+    document.getElementById("mcBlockWrap").hidden === true,
+    "streak min/max shown for varblock; fixed-length field hidden");
+  meth.value = "block"; fire(meth, "change");
+  A(document.getElementById("mcVarBlockWrap").hidden === true &&
+    document.getElementById("mcBlockWrap").hidden === false,
+    "switching to fixed block swaps which field is shown");
+  meth.value = "varblock"; fire(meth, "change");
+
+  var before = document.getElementById("successBig").textContent;
+  document.getElementById("mcBlockMin").value = "9";
+  document.getElementById("mcBlockMax").value = "3";
+  fire(document.getElementById("inputs"), "submit");
+  A(document.getElementById("formMsg").textContent.indexOf("longer than the longest") >= 0,
+    "min > max streak refuses the run (" + document.getElementById("formMsg").textContent + ")");
+  A(document.getElementById("successBig").textContent === before,
+    "...and renders no new results");
+  document.getElementById("mcBlockMin").value = "2";
+  document.getElementById("mcBlockMax").value = "8";
+  fire(document.getElementById("inputs"), "submit");
+  A(document.getElementById("formMsg").textContent === "", "valid streak bounds clear the message");
+})();
+
 // Integration: monthly withdrawal frequency (percentage strategy only). The
 // segmented control is wired, selecting Monthly updates the persisted hidden
 // value + hint, and a run still renders results.

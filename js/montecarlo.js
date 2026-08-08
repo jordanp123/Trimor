@@ -10,6 +10,13 @@
  * Methods:
  *   bootstrap   -- resample whole historical years at random (IID). Preserves
  *                  the real cross-asset/inflation co-movement of each year.
+ *   varblock    -- circular block bootstrap with a RANDOM block length drawn per
+ *                  block from [blockMin, blockMax]. Same streak preservation as
+ *                  `block`, without committing every run to one streak length:
+ *                  a fixed length imposes a period the real data does not have
+ *                  (every 5th year is always a splice point), and it decides in
+ *                  advance whether you are modelling short shocks or long
+ *                  regimes. Drawing the length instead mixes both.
  *   block       -- circular block bootstrap: resample runs of consecutive years
  *                  so sequence-of-returns risk (bad streaks) is preserved.
  *   parametric  -- draw from a bivariate normal fit to history (portfolio return
@@ -21,7 +28,7 @@
   const SWR = (root.SWR = root.SWR || {});
   const core = SWR.core, stats = SWR.stats;
 
-  const METHODS = ["bootstrap", "block", "parametric"];
+  const METHODS = ["bootstrap", "varblock", "block", "parametric"];
 
   // Allocation-weighted portfolio return for every historical year that has
   // data for all allocated assets (mirrors the historical engine's range). Also
@@ -61,6 +68,31 @@
       while (i < N) {
         const j = (rng() * Y) | 0;
         for (let b = 0; b < block && i < N; b++, i++) {
+          const k = (j + b) % Y; // wrap (circular block bootstrap)
+          outPr[i] = pr[k];
+          outInf[i] = inf[k];
+          if (outCsh) outCsh[i] = csh[k];
+        }
+      }
+    };
+  }
+
+  // Variable-length circular block bootstrap. Identical to makeBlock except the
+  // run length is redrawn for every block, uniformly over [lo, hi] inclusive.
+  // Bounds are sanitised here rather than trusted: this runs in the Worker with
+  // whatever the caller passed, and a swapped or zero pair must degrade to a
+  // sane block instead of looping forever (hi<lo) or emitting nothing (lo<1).
+  function makeVarBlock(pr, inf, csh, rng, N, lo, hi) {
+    const Y = pr.length;
+    lo = Math.max(1, lo | 0);
+    hi = Math.max(lo, hi | 0);
+    const span = hi - lo + 1;
+    return function (outPr, outInf, outCsh) {
+      let i = 0;
+      while (i < N) {
+        const j = (rng() * Y) | 0;
+        const len = lo + ((rng() * span) | 0); // uniform integer in [lo, hi]
+        for (let b = 0; b < len && i < N; b++, i++) {
           const k = (j + b) % Y; // wrap (circular block bootstrap)
           outPr[i] = pr[k];
           outInf[i] = inf[k];
@@ -118,6 +150,8 @@
 
     let sample;
     if (method === "parametric") sample = makeParametric(pr, inf, csh, rng);
+    else if (method === "varblock")
+      sample = makeVarBlock(pr, inf, csh, rng, N, opts.blockMin || 2, opts.blockMax || 8);
     else if (method === "block") sample = makeBlock(pr, inf, csh, rng, N, opts.block || 5);
     else sample = makeBootstrap(pr, inf, csh, rng, N);
 

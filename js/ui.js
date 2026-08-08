@@ -17,7 +17,7 @@
     "allocStocks", "allocBonds", "allocGold", "allocCash", "allocCorp", "allocReit", "allocSmallcap",
     "strategy", "initialSpend", "spendPercent", "withdrawFreqVal", "vpwReturn", "capeA", "capeB", "gkGuard", "gkAdjust",
     "spendFloor", "spendCeiling", "inflationMode", "fixedInflation", "taxRate",
-    "runMonteCarlo", "mcMethod", "mcTrials", "mcBlock", "mcSeed", "targetSuccess",
+    "runMonteCarlo", "mcMethod", "mcTrials", "mcBlock", "mcBlockMin", "mcBlockMax", "mcSeed", "targetSuccess",
     "gsolveTarget",
   ];
   const ALLOC = {
@@ -200,6 +200,15 @@
       if (isFinite(fl) && isFinite(cl) && fl > cl)
         return "Spending floor (" + money(fl) + ") is above the ceiling (" + money(cl) + ") — swap them or clear one.";
     }
+    // Same principle for the variable-block bounds: silently swapping them would
+    // run a simulation the user did not ask for.
+    if ($("runMonteCarlo").checked && $("mcMethod").value === "varblock") {
+      const lo = Math.round(num("mcBlockMin", 2)), hi = Math.round(num("mcBlockMax", 8));
+      if (!(lo >= 1) || !(hi >= 1) || lo > MAX_STREAK || hi > MAX_STREAK)
+        return "Streak lengths must be between 1 and " + MAX_STREAK + " years.";
+      if (lo > hi)
+        return "Shortest streak (" + lo + " yrs) is longer than the longest (" + hi + " yrs) — swap them.";
+    }
     return "";
   }
 
@@ -314,7 +323,12 @@
     $("fixedInflationHint").hidden = off; // the what-if caveat only applies in fixed mode
   };
   const toggleMcOptions = () => { $("mcOptions").hidden = !$("runMonteCarlo").checked; };
-  const toggleMcBlock = () => { $("mcBlockWrap").hidden = $("mcMethod").value !== "block"; };
+  const toggleMcBlock = () => {
+    const m = $("mcMethod").value;
+    $("mcBlockWrap").hidden = m !== "block";
+    $("mcVarBlockWrap").hidden = m !== "varblock";
+    $("mcVarBlockHint").hidden = m !== "varblock";
+  };
 
   // ---------- running ----------
   function run(ev) {
@@ -333,6 +347,13 @@
     msg("", true);
   }
 
+  // Variable-block streak bounds. validate() refuses min > max outright rather
+  // than swapping them, so these only defend the engine against out-of-range
+  // or non-numeric input; blockHi never returns less than blockLo.
+  const MAX_STREAK = 30;
+  const blockLo = () => Math.max(1, Math.min(MAX_STREAK, Math.round(num("mcBlockMin", 2)) || 2));
+  const blockHi = () => Math.max(blockLo(), Math.min(MAX_STREAK, Math.round(num("mcBlockMax", 8)) || 8));
+
   function clampTrials() {
     let t = Math.round(num("mcTrials", 10000));
     if (!isFinite(t)) t = 10000;
@@ -342,7 +363,8 @@
   function runMC(params, data) {
     const opts = {
       method: $("mcMethod").value, trials: clampTrials(),
-      block: Math.round(num("mcBlock", 5)), seed: Math.round(num("mcSeed", 12345)),
+      block: Math.round(num("mcBlock", 5)), blockMin: blockLo(), blockMax: blockHi(),
+      seed: Math.round(num("mcSeed", 12345)),
     };
     showProgress(true, 0);
     const w = getWorker();
@@ -395,7 +417,8 @@
     if (state.solveBasis === "montecarlo") {
       const o = {
         method: $("mcMethod").value, trials: Math.min(5000, clampTrials()),
-        block: Math.round(num("mcBlock", 5)), seed: Math.round(num("mcSeed", 12345)),
+        block: Math.round(num("mcBlock", 5)), blockMin: blockLo(), blockMax: blockHi(),
+        seed: Math.round(num("mcSeed", 12345)),
       };
       const inline = function () {
         const runner = (pp, dd) => SWR.mc.run(pp, dd, Object.assign({}, o, { successOnly: true }));
@@ -492,7 +515,8 @@
     if (state.gsolveBasis === "montecarlo") {
       const o = {
         method: $("mcMethod").value, trials: Math.min(5000, clampTrials()),
-        block: Math.round(num("mcBlock", 5)), seed: Math.round(num("mcSeed", 12345)),
+        block: Math.round(num("mcBlock", 5)), blockMin: blockLo(), blockMax: blockHi(),
+        seed: Math.round(num("mcSeed", 12345)),
       };
       const inline = function () {
         const runner = (pp, dd) => SWR.mc.run(pp, dd, Object.assign({}, o, { successOnly: true }));
@@ -1101,7 +1125,9 @@
     rptKV(plan, "Age / sex (for mortality overlay)", Math.round(num("currentAge", 65)) + " / " + $("sex").value);
     if (state.montecarlo) {
       rptKV(plan, "Monte Carlo settings", $("mcMethod").value + ", " + Math.round(num("mcTrials", 10000)).toLocaleString("en-US") + " trials" +
-        ($("mcMethod").value === "block" ? ", block " + Math.round(num("mcBlock", 5)) : "") + ", seed " + Math.round(num("mcSeed", 0)));
+        ($("mcMethod").value === "block" ? ", block " + Math.round(num("mcBlock", 5))
+         : $("mcMethod").value === "varblock" ? ", streaks " + blockLo() + "–" + blockHi() + " yrs"
+         : "") + ", seed " + Math.round(num("mcSeed", 0)));
     }
     rpt.appendChild(plan);
 

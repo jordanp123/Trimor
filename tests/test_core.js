@@ -383,6 +383,59 @@ if (mc) {
   var mb = mc.run(P(), data, { method: "block", trials: 3000, seed: 7, block: 5 });
   console.log("MC block(5) 4%/30yr: success=" + (mb.successRate * 100).toFixed(1) + "%");
   assert(mb.successRate > 0.4 && mb.successRate <= 1.0, "MC block plausible");
+
+  // Variable-length block bootstrap (the default method).
+  var mv = mc.run(P(), data, { method: "varblock", trials: 3000, seed: 7, blockMin: 2, blockMax: 8 });
+  console.log("MC varblock(2-8) 4%/30yr: success=" + (mv.successRate * 100).toFixed(1) + "%");
+  assert(mv.successRate > 0.4 && mv.successRate <= 1.0, "MC varblock plausible");
+  assert(mv.successRate !== mb.successRate, "varblock differs from fixed block (it is not silently aliasing)");
+
+  // Same seed reproduces; a different seed does not.
+  var mv2 = mc.run(P(), data, { method: "varblock", trials: 3000, seed: 7, blockMin: 2, blockMax: 8 });
+  var mv3 = mc.run(P(), data, { method: "varblock", trials: 3000, seed: 8, blockMin: 2, blockMax: 8 });
+  assert(mv.successRate === mv2.successRate, "varblock is deterministic for a given seed");
+  assert(mv.successRate !== mv3.successRate, "varblock responds to the seed");
+
+  // A degenerate range still runs. It will NOT match fixed block(5) trial for
+  // trial even though it draws the same lengths: varblock consumes one extra
+  // random number per block for the (constant) length, so the streams diverge.
+  // Same distribution, different stream -- so assert the distribution, not equality.
+  var mvFixed = mc.run(P(), data, { method: "varblock", trials: 3000, seed: 7, blockMin: 5, blockMax: 5 });
+  assert(Math.abs(mvFixed.successRate - mb.successRate) < 0.05,
+    "varblock(5,5) matches fixed block(5) in distribution (" +
+    (mvFixed.successRate * 100).toFixed(1) + "% vs " + (mb.successRate * 100).toFixed(1) + "%)");
+
+  // Streak length must actually MATTER, and the direction is the opposite of the
+  // intuitive guess (I got this wrong first): LONGER streaks come out SAFER.
+  // Real markets mean-revert -- bad years tend to be followed by recovery -- so
+  // resampling single years destroys that recovery and manufactures long bad
+  // runs history never produced. IID is therefore more pessimistic than the
+  // record itself (93.7% vs the historical 97.6%), and lengthening the streaks
+  // walks the result back toward history (12-20yr -> 95.7%). If this assertion
+  // ever flips, the sampler has stopped preserving sequence.
+  var mvShort = mc.run(P(), data, { method: "varblock", trials: 4000, seed: 11, blockMin: 1, blockMax: 1 });
+  var mvLong = mc.run(P(), data, { method: "varblock", trials: 4000, seed: 11, blockMin: 12, blockMax: 20 });
+  var mIID = mc.run(P(), data, { method: "bootstrap", trials: 4000, seed: 11 });
+  console.log("MC streak effect: 1yr=" + (mvShort.successRate * 100).toFixed(1) +
+    "%  IID=" + (mIID.successRate * 100).toFixed(1) +
+    "%  12-20yr=" + (mvLong.successRate * 100).toFixed(1) + "%");
+  assert(Math.abs(mvShort.successRate - mIID.successRate) < 0.05,
+    "varblock(1,1) reproduces the IID bootstrap (single-year blocks ARE resampled years)");
+  assert(mvLong.successRate > mvShort.successRate + 0.01,
+    "longer streaks move the result toward history, not away (mean reversion is preserved)");
+  assert(mv.successRate > mvShort.successRate && mv.successRate < mvLong.successRate,
+    "the 2-8 default sits between single-year and long-streak sampling (" +
+    (mv.successRate * 100).toFixed(1) + "%)");
+
+  // Bounds are sanitised, not trusted: swapped, zero and absent pairs must all
+  // produce a valid run rather than hanging or emitting an empty sample.
+  [{ blockMin: 8, blockMax: 2 }, { blockMin: 0, blockMax: 0 }, {}].forEach(function (o) {
+    var opts = { method: "varblock", trials: 400, seed: 3 };
+    for (var k in o) opts[k] = o[k];
+    var r = mc.run(P(), data, opts);
+    assert(r.successRate >= 0 && r.successRate <= 1 && r.total === 400,
+      "varblock survives bad bounds " + JSON.stringify(o) + " (success=" + r.successRate.toFixed(2) + ")");
+  });
 }
 
 // 11) Mortality (SSA life table) + Rich/Broke/Dead inputs.
