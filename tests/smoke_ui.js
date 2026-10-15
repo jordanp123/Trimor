@@ -272,6 +272,61 @@ A(document.getElementById("strategy").value === "percent", "guardrail solve kept
   fire(document.getElementById("inputs"), "submit");
 })();
 
+// Return adjustments. These change every number on the page, so the run must
+// reflect them, out-of-range values must be refused rather than clamped, and
+// an active adjustment must be impossible to miss (badge + results note).
+(function () {
+  var note = document.getElementById("adjNote"), badge = document.getElementById("adjBadge");
+  A(note.hidden === true && badge.hidden === true,
+    "no adjustment note or badge when every offset is 0");
+
+  function runAdj(stocks, bonds) {
+    document.getElementById("adjStocks").value = String(stocks);
+    document.getElementById("adjBonds").value = String(bonds);
+    document.getElementById("strategy").value = "constant";
+    fire(document.getElementById("strategy"), "change");
+    document.getElementById("initialSpend").value = "45000";
+    fire(document.getElementById("inputs"), "submit");
+    return document.getElementById("successBig").textContent;
+  }
+  var before = runAdj(0, 0);
+  var cut = runAdj(-1, 0);
+  // parseFloat, not unc(): unc strips commas but not the trailing "%", so it
+  // returns NaN on "78.7%" and every comparison would silently pass.
+  A(parseFloat(cut) < parseFloat(before),
+    "a -1%/yr equity haircut lowers the headline (" + before + " -> " + cut + ")");
+  A(note.hidden === false && note.textContent.indexOf("stocks −1%/yr") >= 0,
+    "the results note names the active adjustment (" + note.textContent.slice(0, 80) + ")");
+  A(note.textContent.indexOf("not the historical record") >= 0,
+    "...and says plainly these are not historical results");
+  A(badge.hidden === false, "the collapsed section carries a badge");
+
+  // Both directions, the user's stated case.
+  runAdj(-0.25, 0.25);
+  A(note.textContent.indexOf("stocks −0.25%/yr") >= 0 &&
+    note.textContent.indexOf("bonds +0.25%/yr") >= 0,
+    "an opposing tilt is spelled out with signs (" + note.textContent.slice(0, 90) + ")");
+
+  // Share links must carry the offsets, or a shared scenario silently reverts
+  // to unadjusted history.
+  var slim = decodeURIComponent(history._last.slice(1));
+  A(slim.indexOf("adjStocks") >= 0 && slim.indexOf("adjBonds") >= 0,
+    "share hash carries the return adjustments");
+
+  // Out of range is refused, not silently clamped.
+  var good = document.getElementById("successBig").textContent;
+  document.getElementById("adjStocks").value = "-99";
+  fire(document.getElementById("inputs"), "submit");
+  A(document.getElementById("formMsg").textContent.indexOf("Return adjustments must be between") >= 0,
+    "an out-of-range offset refuses the run (" + document.getElementById("formMsg").textContent + ")");
+  A(document.getElementById("successBig").textContent === good, "...and renders no new results");
+
+  // Back to clean: the note and badge must disappear again.
+  runAdj(0, 0);
+  A(note.hidden === true && badge.hidden === true,
+    "clearing the offsets hides the note and badge again");
+})();
+
 // Variable-length block bootstrap: the new default MC method. Its two streak
 // fields must show only for that method, and contradictory bounds must be
 // refused rather than silently swapped (same rule as the spending floor/ceiling).

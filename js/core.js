@@ -703,9 +703,47 @@ function simulateCycle(p, ret, infl, cape, runYears) {
     return out;
   }
 
+  // ---------- return adjustments (sensitivity / "haircut") ----------
+  // Shift one or more asset classes' annual returns by a fixed amount, e.g.
+  // stocks -0.25%/yr and bonds +0.25%/yr, to ask "what if history was too
+  // generous to equities?" -- the standard way to stress a backtest against
+  // today's valuations or yields.
+  //
+  // Arithmetic, applied per year to the NOMINAL return, because that is the
+  // quantity the dataset holds and it keeps the maths explainable: a 0.25%
+  // haircut lowers every year's return by exactly 0.25 points, and since
+  // inflation is a separate series the real return falls by the same amount.
+  //
+  // Deliberately NOT compounded or scaled by horizon -- a constant offset is
+  // what users mean by "0.25% less every year", and anything cleverer would be
+  // a model of our own invention sitting on top of the historical record.
+  //
+  // `adj` maps a series key to a decimal offset (0.0025 = +0.25%/yr). Returns a
+  // NEW object sharing every untouched array, so callers can hand it straight
+  // to the engine; DATA itself is never mutated. nulls (years before an asset's
+  // series begins) stay null so validStartOffset still finds the right start.
+  // Each adjusted return is floored at -1: an asset can lose everything in a
+  // year, but a return below -100% would drive the balance negative, which no
+  // amount of rebalancing could represent.
+  function adjustReturns(data, adj) {
+    if (!adj) return data;
+    let any = false;
+    for (const k in adj) if (adj[k]) { any = true; break; }
+    if (!any) return data;
+    const out = Object.assign({}, data);
+    for (let i = 0; i < ASSETS.length; i++) {
+      const key = ASSETS[i], a = adj[key];
+      if (!a || !data[key]) continue;
+      out[key] = data[key].map(function (r) {
+        return r == null || isNaN(r) ? r : Math.max(-1, r + a);
+      });
+    }
+    return out;
+  }
+
   SWR.core = {
     ASSETS, weightedReturn, simulateCycle, summarize, runHistorical,
     solveSpending, solveGuardrail, histogram, histogramLog, validStartOffset, capeRate,
-    bucketInterest,
+    bucketInterest, adjustReturns,
   };
 })(typeof self !== "undefined" ? self : this);

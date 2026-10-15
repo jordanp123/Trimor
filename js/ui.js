@@ -17,9 +17,22 @@
     "allocStocks", "allocBonds", "allocGold", "allocCash", "allocCorp", "allocReit", "allocSmallcap",
     "strategy", "initialSpend", "spendPercent", "withdrawFreqVal", "vpwReturn", "capeA", "capeB", "gkGuard", "gkAdjust",
     "spendFloor", "spendCeiling", "inflationMode", "fixedInflation", "taxRate",
+    "adjStocks", "adjBonds", "adjGold", "adjCash", "adjCorp", "adjReit", "adjSmallcap",
     "runMonteCarlo", "mcMethod", "mcTrials", "mcBlock", "mcBlockMin", "mcBlockMax", "mcSeed", "targetSuccess",
     "gsolveTarget",
   ];
+  // Return-adjustment inputs, mirroring ALLOC. Decimal offsets added to every
+  // year's return for that asset class (see core.adjustReturns).
+  const ADJ = {
+    adjStocks: "stocks", adjBonds: "bonds", adjGold: "gold", adjCash: "cash",
+    adjCorp: "corp", adjReit: "reit", adjSmallcap: "smallcap",
+  };
+  const ADJ_LABEL = {
+    stocks: "stocks", bonds: "bonds", gold: "gold", cash: "cash",
+    corp: "corporate bonds", reit: "real estate", smallcap: "small cap",
+  };
+  const MAX_ADJ = 5; // percentage points per year, either direction
+
   const ALLOC = {
     allocStocks: "stocks", allocBonds: "bonds", allocGold: "gold", allocCash: "cash",
     allocCorp: "corp", allocReit: "reit", allocSmallcap: "smallcap",
@@ -175,12 +188,31 @@
   }
 
   // For fixed-inflation mode, swap in a flat CPI series (returns stay historical).
+  // Non-zero return adjustments as {seriesKey: decimal}, or null if all are 0.
+  // Read from the inputs every run, so a share link or a typed change applies
+  // without any cached state.
+  function returnAdjustments() {
+    const out = {};
+    let any = false;
+    for (const id in ADJ) {
+      const v = num(id, 0) / 100;
+      if (isFinite(v) && v !== 0) { out[ADJ[id]] = v; any = true; }
+    }
+    return any ? out : null;
+  }
+
   function effectiveData() {
-    if ($("inflationMode").value !== "fixed") return DATA;
-    const rate = num("fixedInflation", 3) / 100;
-    const d = Object.assign({}, DATA);
-    d.inflation = DATA.years.map(() => rate);
-    return d;
+    // Both overrides land here because every engine call site (run, the Monte
+    // Carlo solve and the guardrail solve) takes its data from this function.
+    const fixedInfl = $("inflationMode").value === "fixed";
+    const adj = returnAdjustments();
+    if (!fixedInfl && !adj) return DATA;
+    let d = Object.assign({}, DATA);
+    if (fixedInfl) {
+      const rate = num("fixedInflation", 3) / 100;
+      d.inflation = DATA.years.map(() => rate);
+    }
+    return SWR.core.adjustReturns(d, adj);
   }
 
   function validate() {
@@ -209,7 +241,46 @@
       if (lo > hi)
         return "Shortest streak (" + lo + " yrs) is longer than the longest (" + hi + " yrs) — swap them.";
     }
+    // Return adjustments: refuse out-of-range rather than clamping silently,
+    // so the run always matches what is on screen.
+    for (const id in ADJ) {
+      const raw = $(id).value.trim();
+      if (raw === "") continue;
+      const v = parseFloat(raw);
+      if (!isFinite(v) || v < -MAX_ADJ || v > MAX_ADJ)
+        return "Return adjustments must be between " + (-MAX_ADJ) + "% and +" + MAX_ADJ + "% per year.";
+    }
     return "";
+  }
+
+  // Human-readable summary of the active adjustments, e.g.
+  // "stocks −0.25%/yr, bonds +0.25%/yr". Empty string when none are set.
+  function adjSummary() {
+    const adj = returnAdjustments();
+    if (!adj) return "";
+    const parts = [];
+    SWR.core.ASSETS.forEach((k) => {
+      if (!adj[k]) return;
+      const pct = adj[k] * 100;
+      parts.push(ADJ_LABEL[k] + " " + (pct > 0 ? "+" : "\u2212") +
+        Math.abs(pct).toFixed(2).replace(/\.?0+$/, "") + "%/yr");
+    });
+    return parts.join(", ");
+  }
+
+  // Badge on the collapsed section + a note beside the results. An adjustment
+  // changes every number on the page, so it must be visible without opening
+  // the section and must survive a screenshot of the headline.
+  function renderAdjNote() {
+    const txt = adjSummary();
+    const badge = $("adjBadge"), note = $("adjNote");
+    badge.hidden = !txt;
+    if (txt) badge.textContent = "on";
+    note.hidden = !txt;
+    if (txt) {
+      note.textContent = "Returns adjusted: " + txt +
+        ". These results are not the historical record — they are history shifted by the offsets you set.";
+    }
   }
 
   // ---------- dynamic income / adjustment rows ----------
@@ -343,6 +414,7 @@
     enableMcTab(false);
     setMode("historical");
     if ($("runMonteCarlo").checked) runMC(params, data);
+    renderAdjNote();
     updateHash();
     msg("", true);
   }
@@ -1136,6 +1208,9 @@
     rptKV(plan, "Fees / tax on withdrawals", num("feeRate", 0) + "% / " + num("taxRate", 0) + "%");
     rptKV(plan, "Inflation", $("inflationMode").value === "fixed" ? "fixed " + num("fixedInflation", 3) + "%/yr" : "historical CPI");
     rptKV(plan, "Age / sex (for mortality overlay)", Math.round(num("currentAge", 65)) + " / " + $("sex").value);
+    const adjTxt = adjSummary();
+    if (adjTxt) rptKV(plan, "Return adjustments", adjTxt +
+      " — results are history shifted by these offsets, not the historical record");
     if (state.montecarlo) {
       rptKV(plan, "Monte Carlo settings", $("mcMethod").value + ", " + Math.round(num("mcTrials", 10000)).toLocaleString("en-US") + " trials" +
         ($("mcMethod").value === "block" ? ", block " + Math.round(num("mcBlock", 5))
@@ -1354,6 +1429,13 @@
     $("initialValue").addEventListener("input", syncStrategy);
     $("initialSpend").addEventListener("input", syncStrategy);
     ["capeA", "capeB", "spendFloor", "spendCeiling"].forEach((id) => $(id).addEventListener("input", updateCapeHint));
+    // The badge tracks the inputs immediately; the note beside the results
+    // waits for a re-run, because until then the results are unadjusted.
+    Object.keys(ADJ).forEach((id) => $(id).addEventListener("input", () => {
+      const txt = adjSummary();
+      $("adjBadge").hidden = !txt;
+      if (txt) $("adjBadge").textContent = "on";
+    }));
     MONEY_IDS.forEach((id) => attachMoney($(id)));
     Object.keys(ALLOC).forEach((id) => $(id).addEventListener("input", updateAllocSum));
     $("inflationMode").addEventListener("change", toggleFixed);
@@ -1437,7 +1519,7 @@
     $("mcSeed").value = String(100000 + Math.floor(Math.random() * 900000));
     loadHash();
     MONEY_IDS.forEach((id) => formatMoneyInput($(id))); // defaults + hash values get commas
-    stampBuild(); renderDataHealth();
+    stampBuild(); renderDataHealth(); renderAdjNote();
     syncStrategy(); syncFreq(); updateAllocSum(); toggleFixed(); toggleMcOptions(); toggleMcBlock();
     run();
   }

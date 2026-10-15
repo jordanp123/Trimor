@@ -237,6 +237,91 @@ assert(rSafe.successRate === 1 && rSafe.lowestReal.min > 0,
       "VPW over a 60-year plan with truncated cycles stays sane");
   })();
 
+  // ---- return adjustments (sensitivity haircut) -----------------------------
+  (function () {
+    var adjust = core.adjustReturns;
+
+    // Identity: no adjustment, or an all-zero one, must return the SAME object,
+    // so the untouched path cannot silently copy or perturb the dataset.
+    assert(adjust(data, null) === data, "no adjustment returns the dataset itself");
+    assert(adjust(data, { stocks: 0, bonds: 0 }) === data, "all-zero adjustment returns the dataset itself");
+
+    // Offsets are arithmetic, per year, and leave other series alone.
+    var d = adjust(data, { stocks: -0.0025 });
+    var i = data.years.indexOf(1990);
+    assert(Math.abs(d.stocks[i] - (data.stocks[i] - 0.0025)) < 1e-12,
+      "stocks shifted by exactly -0.25 points");
+    assert(d.bonds === data.bonds && d.inflation === data.inflation,
+      "untouched series are shared, not copied");
+    assert(data.stocks[i] !== d.stocks[i] && Math.abs(data.stocks[i]) > 0,
+      "the original dataset is never mutated");
+
+    // nulls (years before a series begins) must stay null, or validStartOffset
+    // would think the asset has data back to 1871.
+    var g = adjust(data, { gold: 0.01 });
+    var pre = data.years.indexOf(1900);
+    assert(data.gold[pre] == null && g.gold[pre] == null, "pre-series nulls stay null");
+    assert(core.validStartOffset({ allocation: { gold: 1 } }, g) ===
+           core.validStartOffset({ allocation: { gold: 1 } }, data),
+      "adjusting does not change when an asset's history starts");
+
+    // A return can lose everything but never more: below -100% the balance
+    // would go negative, which rebalancing cannot represent.
+    var wipe = adjust(data, { stocks: -5 });
+    assert(wipe.stocks.every(function (r) { return r == null || r >= -1; }),
+      "adjusted returns are floored at -100%");
+    var wiped = core.runHistorical(P({ allocation: { stocks: 1 } }), wipe);
+    assert(wiped.endingReal.min >= 0 && wiped.successRate === 0,
+      "a -500% haircut wipes out every cycle without going negative");
+
+    // Direction: a haircut must lower success, a boost must raise it, and the
+    // effect must be monotone in the size of the offset.
+    function successWith(a) {
+      return core.runHistorical(P({ years: 30, spending: { strategy: "constant", initial: 45000 } }),
+        adjust(data, a)).successRate;
+    }
+    var base = successWith(null);
+    var cut25 = successWith({ stocks: -0.0025 });
+    var cut100 = successWith({ stocks: -0.01 });
+    var up50 = successWith({ stocks: 0.005 });
+    console.log("return adj 4.5%/30yr: -1.0% -> " + (cut100 * 100).toFixed(1) +
+      "%, -0.25% -> " + (cut25 * 100).toFixed(1) + "%, base " + (base * 100).toFixed(1) +
+      "%, +0.5% -> " + (up50 * 100).toFixed(1) + "%");
+    assert(cut25 <= base && cut100 <= cut25, "bigger equity haircut, lower success (monotone)");
+    assert(up50 >= base, "boosting equity returns raises success");
+    assert(cut100 < base, "a 1%/yr haircut measurably changes the outcome");
+
+    // Offsetting two classes in opposite directions -- the stated use case.
+    // Note the success RATE need not move: at 75/25 this nets only -0.125%/yr
+    // on the portfolio, and with 126 discrete cycles the rate steps in 0.79%
+    // increments, so a small shift can leave the failure count untouched.
+    // The DISTRIBUTION must move though, so assert on that instead.
+    function endingWith(a) {
+      return core.runHistorical(P({ years: 30, spending: { strategy: "constant", initial: 45000 } }),
+        adjust(data, a)).endingReal.median;
+    }
+    var tilt = successWith({ stocks: -0.0025, bonds: 0.0025 });
+    var tiltEnd = endingWith({ stocks: -0.0025, bonds: 0.0025 });
+    var baseEnd = endingWith(null);
+    assert(tilt >= 0 && tilt <= 1, "the stocks-down/bonds-up tilt yields a valid rate (" +
+      (tilt * 100).toFixed(1) + "%)");
+    assert(tiltEnd < baseEnd,
+      "...and a net-negative tilt lowers the median ending balance ($" +
+      Math.round(tiltEnd) + " vs $" + Math.round(baseEnd) + ")");
+    // The reverse tilt must move it the other way.
+    assert(endingWith({ stocks: 0.0025, bonds: -0.0025 }) > baseEnd,
+      "...and the opposite tilt raises it");
+
+    // Monte Carlo draws from the same series, so it inherits the adjustment.
+    if (self.SWR.mc) {
+      var mcBase = self.SWR.mc.run(P(), data, { method: "bootstrap", trials: 1200, seed: 4 }).successRate;
+      var mcCut = self.SWR.mc.run(P(), adjust(data, { stocks: -0.01 }),
+        { method: "bootstrap", trials: 1200, seed: 4 }).successRate;
+      assert(mcCut < mcBase, "Monte Carlo inherits the haircut (" +
+        (mcBase * 100).toFixed(1) + "% -> " + (mcCut * 100).toFixed(1) + "%)");
+    }
+  })();
+
   repOK(H({ spending: { strategy: "percent", percent: 0.04 } }), "historical percent");
   repOK(H(), "historical 4% rule");
   if (self.SWR.mc) repOK(self.SWR.mc.run(P(), data, { method: "bootstrap", trials: 1500, seed: 11 }), "monte carlo");

@@ -398,3 +398,21 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 #report .rpt-qr figcaption { font-size: 10.5px; color: #555; margin-top: 2px; }
 #report .rpt-vintage { font-size: 10.5px; color: #555; }
 #report .rpt-disclaimer { font-size: 10.5px; color: #777; font-style: italic; }
+
+/* Return adjustments. Two surfaces, both amber like .data-warning (whose
+   translucent-over-theme approach reads correctly in light and dark, rather
+   than hard-coded colours that only suit one): a badge on the collapsed
+   section so an active haircut is visible without opening it, and a note
+   beside the results so it survives a screenshot of the headline. */
+.adj-badge {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 1px 7px; border-radius: 999px; margin-left: 6px; vertical-align: 1px;
+  background: rgba(230, 149, 0, 0.16); border: 1px solid rgba(230, 149, 0, 0.45);
+  color: var(--warn);
+}
+.adj-note {
+  margin: 12px 2px 0; padding: 9px 12px; border-radius: 10px;
+  font-size: 12.5px; line-height: 1.5; color: var(--ink);
+  background: rgba(230, 149, 0, 0.10); border: 1px solid rgba(230, 149, 0, 0.42);
+}
+.adj-note[hidden] { display: none; }

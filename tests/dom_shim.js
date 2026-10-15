@@ -125,6 +125,10 @@ var DEFAULTS = {
   compPrincipal: { type: "number", value: "1500" }, compAddition: { type: "number", value: "0" },
   compRate: { type: "number", value: "5" }, compYears: { type: "number", value: "5" },
   compTimes: { type: "number", value: "1" },
+  adjStocks: { type: "number", value: "0" }, adjBonds: { type: "number", value: "0" },
+  adjGold: { type: "number", value: "0" }, adjCash: { type: "number", value: "0" },
+  adjCorp: { type: "number", value: "0" }, adjReit: { type: "number", value: "0" },
+  adjSmallcap: { type: "number", value: "0" },
   allocStocks: { type: "number", value: "75" }, allocBonds: { type: "number", value: "25" },
   allocGold: { type: "number", value: "0" }, allocCash: { type: "number", value: "0" },
   allocCorp: { type: "number", value: "0" }, allocReit: { type: "number", value: "0" }, allocSmallcap: { type: "number", value: "0" },
@@ -145,7 +149,7 @@ var DEFAULTS = {
 // Non-input element ids that exist in index.html.
 var KNOWN = {};
 ["themeBtn", "helpBtn", "helpOverlay", "helpClose", "helpTitle", "inputs", "allocSum", "spendRateHint", "fixedInflationWrap", "fixedInflationHint", "incomeRows", "addIncome",
- "adjustRows", "addAdjust", "mcOptions", "mcBlockWrap", "mcVarBlockWrap", "mcVarBlockHint", "runBtn", "solveBtn", "shareBtn",
+ "adjustRows", "addAdjust", "mcOptions", "mcBlockWrap", "mcVarBlockWrap", "mcVarBlockHint", "adjBox", "adjBadge", "adjNote", "runBtn", "solveBtn", "shareBtn",
  "capeRateNow", "withdrawFreq", "withdrawFreqHint", "printBtn", "report", "buildStamp", "dataWarning",
  "resetBtn", "solveBasis", "solveResult", "gsolveBtn", "gsolveBasis", "gsolveResult", "formMsg", "results", "successCard", "successKind", "successBig", "successLabel", "headStats",
  "progressWrap", "progressBar", "progressLabel", "trajMode", "dollarMode", "trajUnit", "trajCanvas", "histCanvas",
