@@ -682,7 +682,14 @@
       $("successBig").textContent = (pct >= 99.95 ? "100" : pct.toFixed(1)) + "%";
       $("successCard").className = "success-card " + (s.successRate >= 0.95 ? "good" : s.successRate >= 0.75 ? "warn" : "bad");
       let label = s.succeeded.toLocaleString() + " of " + s.total.toLocaleString() + " " + unit + " lasted " + s.years + " years";
-      if (s.startYears) label += " · retirements starting " + s.startYears.first + "–" + s.startYears.last;
+      if (s.startYears) {
+        label += " · retirements starting " + s.startYears.first + "–" + s.startYears.last;
+        // Start years whose plan outlives the data and that were still solvent
+        // when it ran out. They are excluded from the rate because the outcome
+        // is genuinely unknown -- say so, or the denominator looks arbitrary.
+        if (s.indeterminate) label += " (" + s.indeterminate + " later start" +
+          (s.indeterminate === 1 ? "" : "s") + " can't be judged yet — history ends first)";
+      }
       // A variable plan that DID fail carries both risks, so name the second
       // one here -- otherwise the pay cut disappears the moment ruin appears.
       if (variable) {
@@ -1042,6 +1049,12 @@
   function rptResults(rpt, label, s, isMC) {
     const sec = rptSection(label);
     rptKV(sec, "Success rate", (s.successRate * 100).toFixed(1) + "% — " + s.succeeded + " of " + s.total + (isMC ? " trials" : " cycles") + " lasted the full " + s.years + " years");
+    if (!isMC && (s.indeterminate || s.truncatedFailures)) {
+      rptKV(sec, "Cycle accounting",
+        s.fullCycles + " fully observed, " + s.truncatedFailures +
+        " ran dry before the data ended (counted as failures), " + s.indeterminate +
+        " still solvent when the data ended (not counted — outcome unknown)");
+    }
     if (!isMC && s.startYears) rptKV(sec, "Cycle start years", s.startYears.first + "–" + s.startYears.last);
     if (!isMC && s.representative && s.representative.worst) {
       const w = s.representative.worst;

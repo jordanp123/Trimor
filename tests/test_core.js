@@ -184,6 +184,59 @@ assert(rSafe.successRate === 1 && rSafe.lowestReal.min > 0,
   }), data);
   assert(vnf.failed === 0, "floorless VPW still completes by design (0 failures, got " + vnf.failed + ")");
 
+  // ---- Horizon accounting: a longer plan must never score BETTER ------------
+  // Reported from use: 60 years showed a higher success rate than 50. Cause: a
+  // 60-year cycle cannot start after 1966, so the 1967-69 stagflation cohort --
+  // among the worst starts on record -- dropped out of the sample entirely and
+  // the longer plan looked safer. Measured old behaviour: 55yr 81.2%, 60yr
+  // 82.3%, 65yr 84.6%.
+  //
+  // Fixed by running every start year for as long as history allows: a cycle
+  // that ran dry is a known failure at any horizon at least that long (once the
+  // balance is $0 it stays $0), while one still solvent when the data ended is
+  // reported as indeterminate and left out of the rate.
+  (function () {
+    function at(N) {
+      return core.runHistorical(P({ years: N, spending: { strategy: "constant", initial: 40000 } }), data);
+    }
+    var h50 = at(50), h55 = at(55), h60 = at(60), h65 = at(65);
+    assert(h60.successRate <= h50.successRate,
+      "60yr is not safer than 50yr (" + (h60.successRate * 100).toFixed(1) + "% vs " +
+      (h50.successRate * 100).toFixed(1) + "%)");
+    assert(h65.successRate <= h60.successRate && h60.successRate <= h55.successRate,
+      "success falls as the horizon grows (55/60/65 = " +
+      [h55, h60, h65].map(function (x) { return (x.successRate * 100).toFixed(1); }).join("/") + ")");
+
+    // The 1967-73 cohort must still be IN the 60-year sample, as known failures.
+    assert(h60.truncatedFailures > 0,
+      "60yr keeps start years that ran dry before the data ended (" + h60.truncatedFailures + ")");
+    assert(h60.startYears.last >= 1970,
+      "60yr sample reaches past 1966 via those failures (last start " + h60.startYears.last + ")");
+    var late = h60.sampleSeries.filter(function (c) { return c.startYear > 1966; });
+    assert(late.length > 0 && late.every(function (c) { return !c.success; }),
+      "every post-1966 start in the 60yr sample is a definite failure");
+    assert(late.every(function (c) { return c.realSeries.length === h60.years + 1 && c.realSeries[h60.years] === 0; }),
+      "...and each is zero-padded to the full horizon, so charts/percentiles are unaffected");
+
+    // Accounting must balance: every start year is counted exactly once.
+    assert(h60.fullCycles + h60.truncatedFailures + h60.indeterminate === data.years.length - 0 &&
+           h60.total === h60.fullCycles + h60.truncatedFailures,
+      "cycle accounting balances (" + h60.fullCycles + "+" + h60.truncatedFailures + "+" +
+      h60.indeterminate + " over " + data.years.length + " years)");
+
+    // Short horizons are unchanged: no post-1997 start has run dry yet, so the
+    // canonical numbers must not move.
+    var h30 = at(30);
+    assert(h30.truncatedFailures === 0 && h30.fullCycles === 126,
+      "30yr accounting unchanged (126 full cycles, 0 truncated failures)");
+
+    // Plan length still drives the strategies: a truncated cycle budgets for the
+    // FULL horizon, so VPW's factor must not shorten just because data ran out.
+    var v = core.runHistorical(P({ years: 60, spending: { strategy: "vpw", vpwReturn: 0.034 } }), data);
+    assert(v.spending.firstYear > 0 && v.successRate >= 0 && v.successRate <= 1,
+      "VPW over a 60-year plan with truncated cycles stays sane");
+  })();
+
   repOK(H({ spending: { strategy: "percent", percent: 0.04 } }), "historical percent");
   repOK(H(), "historical 4% rule");
   if (self.SWR.mc) repOK(self.SWR.mc.run(P(), data, { method: "bootstrap", trials: 1500, seed: 11 }), "monte carlo");

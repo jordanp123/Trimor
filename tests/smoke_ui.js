@@ -251,6 +251,27 @@ A(document.getElementById("strategy").value === "percent", "guardrail solve kept
     "constant-dollar still headlines the success rate");
 })();
 
+// Long horizons: the caption must disclose the start years that cannot be
+// judged, because they are excluded from the success-rate denominator. Without
+// this the rate looks like it covers all of history when it cannot -- a 60-year
+// plan can only be fully observed from starts up to 1966.
+(function () {
+  var yearsEl = document.getElementById("years");
+  var before = yearsEl.value;
+  yearsEl.value = "60";
+  document.getElementById("strategy").value = "constant";
+  fire(document.getElementById("strategy"), "change");
+  document.getElementById("initialSpend").value = "40000";
+  fire(document.getElementById("inputs"), "submit");
+  var lbl = document.getElementById("successLabel").textContent;
+  A(lbl.indexOf("can't be judged yet") >= 0,
+    "60yr caption discloses the unjudgeable later starts (" + lbl.slice(0, 120) + ")");
+  A(/retirements starting 18\d\d–19(7|8|9)\d/.test(lbl),
+    "...and the sample reaches past 1966 thanks to the known failures");
+  yearsEl.value = before;
+  fire(document.getElementById("inputs"), "submit");
+})();
+
 // Variable-length block bootstrap: the new default MC method. Its two streak
 // fields must show only for that method, and contradictory bounds must be
 // refused rather than silently swapped (same rule as the spending floor/ceiling).

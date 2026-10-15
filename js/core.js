@@ -99,8 +99,16 @@
    * Returns { series:[N+1], endValue, endValueReal, success, failedYear,
    *           inflationFactor, withdrawals:[N] (nominal) }.
    */
-  function simulateCycle(p, ret, infl, cape) {
-    const N = p.years;
+function simulateCycle(p, ret, infl, cape, runYears) {
+  const N = p.years;   // the PLANNED horizon -- what the retiree is budgeting for
+  // Years we can actually OBSERVE. A *truncated* cycle is a start year whose
+  // market data runs out before the plan ends (a 60-year plan starting 1969,
+  // with history ending 2025, can only be watched for 57). It still plans for
+  // N years, so VPW's amortization factor, Guyton's final-15-years rule and
+  // the final-year failure convention below all deliberately keep using N --
+  // only the loop stops early. Shortening N instead would quietly simulate a
+  // different, shorter retirement than the one being tested.
+  const R = runYears == null ? N : Math.max(0, Math.min(N, runYears));
     const sp = p.spending;
     const alloc = p.allocation;
     const feeRate = p.feeRate || 0;
@@ -125,7 +133,7 @@
     const realWithdrawals = new Array(N).fill(0); // gross spending each year, in year-0 dollars
     let failed = -1;
 
-    for (let i = 0; i < N; i++) {
+    for (let i = 0; i < R; i++) {
       // Monte Carlo passes a precomputed portfolio-return array (__port); the
       // historical path passes per-asset series and we weight them here.
       const r = ret.__port ? ret.__port[i] : weightedReturn(alloc, ret, i);
@@ -250,6 +258,8 @@
       inflationFactor: cumInfl,
       success: failed < 0,
       failedYear: failed,
+      observedYears: R,   // < N means history ran out before the plan did
+      complete: R >= N,
       realWithdrawals,
     };
   }
@@ -550,10 +560,29 @@
       if (c > startOff) startOff = c;
     }
     const first = yrs[startOff];
-    const lastStart = yrs[yrs.length - 1] - N + 1;
-    if (lastStart < first) return emptySummary(N);
+    const lastYear = yrs[yrs.length - 1];
+    if (lastYear < first) return emptySummary(N);
+    // Iterate EVERY start year, not just those with a full N years of data.
+    //
+    // Why: restricting the sample to complete cycles makes the success rate
+    // non-monotone in the horizon -- it can RISE as the plan gets longer, which
+    // is nonsense. A 60-year cycle cannot start after 1966, so the 1967-69
+    // stagflation cohort (among the worst starts on record) silently drops out
+    // of the sample and the LONGER plan scores better. Measured before this
+    // change: 55yr 81.2%, 60yr 82.3%, 65yr 84.6%.
+    //
+    // The fix: a cycle that ran dry is a KNOWN failure at every horizon at
+    // least as long as the one that killed it -- once the balance is $0 it
+    // stays $0 whatever the missing years would have done. So each start year
+    // runs for as many years as history allows, then is classified:
+    //   ran dry while observed -> definite FAILURE, counted. simulateCycle
+    //       already zero-pads its series out to N, so it behaves exactly like
+    //       any other failed cycle for charts, percentiles and worst-case.
+    //   still solvent when the data ended -> INDETERMINATE: reported, but kept
+    //       out of the rate, because we genuinely do not know the outcome.
     const cycles = [];
-    for (let s = first; s <= lastStart; s++) {
+    let indeterminate = 0;
+    for (let s = first; s <= lastYear; s++) {
       const off = s - yrs[0];
       const ret = {};
       for (let a = 0; a < ASSETS.length; a++) {
@@ -567,12 +596,20 @@
       if (p.spending.strategy === "percent" && p.spending.monthly && data.cash) {
         ret.__tbill = data.cash.slice(off, off + N);
       }
-      const res = simulateCycle(p, ret, infl, capeSlice);
+      const res = simulateCycle(p, ret, infl, capeSlice, Math.min(N, lastYear - s + 1));
       res.startYear = s;
-      cycles.push(res);
+      if (res.complete || !res.success) cycles.push(res); // fully observed, or a known failure
+      else indeterminate++;                               // outlived the data; unknowable
     }
+    if (!cycles.length) return emptySummary(N);
     const summary = summarize(p, cycles, { mode: "historical" });
     summary.startYears = { first: cycles[0].startYear, last: cycles[cycles.length - 1].startYear };
+    // Start years whose plan outlives the data and that were still solvent when
+    // it ran out. Surfaced so the denominator is never silently narrower than
+    // the history actually available.
+    summary.indeterminate = indeterminate;
+    summary.truncatedFailures = cycles.filter(function (c) { return !c.complete; }).length;
+    summary.fullCycles = cycles.length - summary.truncatedFailures;
     return summary;
   }
 
