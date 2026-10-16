@@ -272,6 +272,42 @@ A(document.getElementById("strategy").value === "percent", "guardrail solve kept
   fire(document.getElementById("inputs"), "submit");
 })();
 
+// Trial cap. The reported confusion was that typing 90,000 ran 50,000 with no
+// indication, so the number on screen and the number simulated must never
+// disagree in silence.
+(function () {
+  var el = document.getElementById("mcTrials"), cap = document.getElementById("mcTrialsCap");
+  var LIMIT = SWR.mc.MAX_TRIALS;
+  A(LIMIT === 200000, "engine trial cap is 200,000 (" + LIMIT + ")");
+  A(String(el.max) === String(LIMIT),
+    "the input's max advertises the engine limit (" + el.max + ")");
+
+  el.value = "10000"; fire(el, "input");
+  A(cap.hidden === true, "no cap notice at a normal trial count");
+
+  el.value = "90000"; fire(el, "input");
+  A(cap.hidden === true, "90,000 now runs as asked — no notice, because nothing is clamped");
+
+  el.value = "250000"; fire(el, "input");
+  A(cap.hidden === false && cap.textContent.indexOf("200,000") >= 0,
+    "over the limit, the notice states what will actually run (" + cap.textContent.slice(0, 60) + ")");
+  A(cap.textContent.indexOf("under 0.1 points") >= 0,
+    "...and says why more trials would not help");
+  A(cap.textContent.length < 90,
+    "...in one short line, since it sits in a narrow column (" + cap.textContent.length + " chars)");
+
+  // The engine must honour the same limit it advertises.
+  var capped = SWR.mc.run(
+    { initialValue: 1e6, years: 30, allocation: { stocks: 0.75, bonds: 0.25 },
+      feeRate: 0.001, taxRate: 0, spending: { strategy: "constant", initial: 40000 },
+      incomes: [], adjustments: [] },
+    SWR_DATA, { method: "bootstrap", trials: 999999, seed: 1, successOnly: true });
+  A(capped.total === LIMIT, "the engine clamps to its own limit (" + capped.total + ")");
+
+  el.value = "10000"; fire(el, "input");
+  A(cap.hidden === true, "returning under the limit clears the notice");
+})();
+
 // Length-dependent strategies (VPW, Guyton) get a comparability disclaimer,
 // but only where it is true: the draw depends on the plan length AND failures
 // are reachable. A floorless VPW plan cannot run dry, so warning there would

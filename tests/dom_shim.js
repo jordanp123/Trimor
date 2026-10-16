@@ -149,7 +149,7 @@ var DEFAULTS = {
 // Non-input element ids that exist in index.html.
 var KNOWN = {};
 ["themeBtn", "helpBtn", "helpOverlay", "helpClose", "helpTitle", "inputs", "allocSum", "spendRateHint", "fixedInflationWrap", "fixedInflationHint", "incomeRows", "addIncome",
- "adjustRows", "addAdjust", "mcOptions", "mcBlockWrap", "mcVarBlockWrap", "mcVarBlockHint", "adjBox", "adjBadge", "adjNote", "horizonNote", "runBtn", "solveBtn", "shareBtn",
+ "adjustRows", "addAdjust", "mcOptions", "mcBlockWrap", "mcVarBlockWrap", "mcVarBlockHint", "adjBox", "adjBadge", "adjNote", "horizonNote", "mcTrialsCap", "runBtn", "solveBtn", "shareBtn",
  "capeRateNow", "withdrawFreq", "withdrawFreqHint", "printBtn", "report", "buildStamp", "dataWarning",
  "resetBtn", "solveBasis", "solveResult", "gsolveBtn", "gsolveBasis", "gsolveResult", "formMsg", "results", "successCard", "successKind", "successBig", "successLabel", "headStats",
  "progressWrap", "progressBar", "progressLabel", "trajMode", "dollarMode", "trajUnit", "trajCanvas", "histCanvas",

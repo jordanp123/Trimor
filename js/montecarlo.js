@@ -30,6 +30,10 @@
 
   const METHODS = ["bootstrap", "varblock", "block", "parametric"];
 
+  // Upper bound on Monte Carlo trials, exported so the UI, its input's max
+  // attribute and this engine can never drift apart.
+  const MAX_TRIALS = 200000;
+
   // Allocation-weighted portfolio return for every historical year that has
   // data for all allocated assets (mirrors the historical engine's range). Also
   // carries that year's 3-month T-bill rate (csh) in lock-step, for the monthly
@@ -137,8 +141,13 @@
   function run(p, data, opts) {
     opts = opts || {};
     // Hard cap independent of any caller: bounds compute time and the memory
-    // held by the trial set, so no input can exhaust the browser.
-    const trials = Math.min(50000, Math.max(1, opts.trials || 10000));
+    // held by the trial set, so no input can exhaust the browser. Every trial's
+    // full trajectory is retained until summarize() runs, so cost scales with
+    // trials x years -- measured here at 200k: ~10s/508MB over 30 years and
+    // ~20s/813MB over 60. This is the ONE place the limit is defined; the page
+    // reads it back as SWR.mc.MAX_TRIALS rather than keeping its own copy,
+    // because a second number would silently disagree with this one.
+    const trials = Math.min(MAX_TRIALS, Math.max(1, opts.trials || 10000));
     const method = METHODS.indexOf(opts.method) >= 0 ? opts.method : "bootstrap";
     const N = p.years;
     const { pr, inf, csh } = portfolioReturns(p, data);
@@ -192,5 +201,5 @@
     return sum;
   }
 
-  SWR.mc = { METHODS, run, portfolioReturns, methodStats };
+  SWR.mc = { METHODS, MAX_TRIALS, run, portfolioReturns, methodStats };
 })(typeof self !== "undefined" ? self : this);

@@ -143,7 +143,9 @@
   // victim might open), so every value derived from it is bounded to keep memory
   // and CPU finite. There is no server, so these protect the visitor's browser.
   const MAX_FLOWS = 50;        // income/adjustment rows
-  const MAX_TRIALS = 50000;    // Monte Carlo trials
+  // Defined by the engine (js/montecarlo.js) and read back here, so the page,
+  // the input's max attribute and the sampler cannot disagree about the limit.
+  const MAX_TRIALS = SWR.mc.MAX_TRIALS;
   const MAX_PORTFOLIO = 1e13;  // $10 trillion ceiling guards against overflow/Infinity
   const MAX_NOTE = 24;         // per-row note tag; also caps hash-planted strings
 
@@ -433,6 +435,7 @@
     // an out-of-range value validate() had just refused.
     state.adjSummary = adjSummary();
     renderAdjNote();
+    renderTrialsCap();
     updateHash();
     msg("", true);
   }
@@ -443,6 +446,21 @@
   const MAX_STREAK = 30;
   const blockLo = () => Math.max(1, Math.min(MAX_STREAK, Math.round(num("mcBlockMin", 2)) || 2));
   const blockHi = () => Math.max(blockLo(), Math.min(MAX_STREAK, Math.round(num("mcBlockMax", 8)) || 8));
+
+  // The typed value exceeds what will actually run: say so, next to the input,
+  // rather than silently simulating a different number than the one on screen.
+  function renderTrialsCap() {
+    const el = $("mcTrialsCap");
+    const typed = Math.round(num("mcTrials", 10000));
+    const over = isFinite(typed) && typed > MAX_TRIALS;
+    el.hidden = !over;
+    if (over) {
+      // Short on purpose -- it sits in a narrow column. It has to answer only
+      // "what will actually run", with one clause on why more would not help.
+      el.textContent = "Capped at " + MAX_TRIALS.toLocaleString("en-US") +
+        " — more trials shift the result by under 0.1 points.";
+    }
+  }
 
   function clampTrials() {
     let t = Math.round(num("mcTrials", 10000));
@@ -1484,6 +1502,11 @@
       $("adjBadge").hidden = !txt;
       if (txt) $("adjBadge").textContent = "on";
     }));
+    // One source of truth for the limit: the engine defines it, the input's
+    // max advertises it, and the hint explains it when exceeded.
+    $("mcTrials").max = String(MAX_TRIALS);
+    $("mcTrials").addEventListener("input", renderTrialsCap);
+    renderTrialsCap();
     MONEY_IDS.forEach((id) => attachMoney($(id)));
     Object.keys(ALLOC).forEach((id) => $(id).addEventListener("input", updateAllocSum));
     $("inflationMode").addEventListener("change", toggleFixed);

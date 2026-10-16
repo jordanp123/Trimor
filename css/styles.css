@@ -427,3 +427,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   border: 1px solid var(--line);
 }
 .method-note[hidden] { display: none; }
+
+/* Shown only when the typed trial count exceeds the engine's limit, so the
+   number on screen and the number actually simulated can never disagree
+   silently (the reported confusion: type 90,000, get 50,000 back). */
+.trials-cap { margin: 4px 0 0; color: var(--warn); }
+.trials-cap[hidden] { display: none; }

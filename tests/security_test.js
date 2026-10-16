@@ -40,7 +40,14 @@ var p = {
   spending: { strategy: "percent", percent: 0.04 }, incomes: [], adjustments: [],
 };
 var mc = self.SWR.mc.run(p, self.SWR_DATA, { method: "bootstrap", trials: 999999999, seed: 1, successOnly: true });
-A(mc.total === 50000, "Monte Carlo trials hard-capped at 50000 (got " + mc.total + ")");
+// Asserted against the exported constant, not a literal: the point is that a
+// hostile or fat-fingered input CANNOT exceed the engine's own limit, which
+// is a property that must survive the limit being retuned.
+A(mc.total === self.SWR.mc.MAX_TRIALS,
+  "Monte Carlo trials hard-capped at the engine limit " + self.SWR.mc.MAX_TRIALS +
+  " (got " + mc.total + ")");
+A(self.SWR.mc.MAX_TRIALS > 0 && self.SWR.mc.MAX_TRIALS <= 1000000,
+  "the cap itself is sane (" + self.SWR.mc.MAX_TRIALS + ")");
 
 // CAPE rule with absurd constants must stay finite (UI clamps a/b/CAPE; the engine
 // clamps spending to the balance, so no input can produce NaN/Infinity or a hang).
