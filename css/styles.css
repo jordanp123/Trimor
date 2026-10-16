@@ -416,3 +416,14 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   background: rgba(230, 149, 0, 0.10); border: 1px solid rgba(230, 149, 0, 0.42);
 }
 .adj-note[hidden] { display: none; }
+
+/* Methodological caveat tied to the chosen strategy. Deliberately quieter than
+   .adj-note: that one says the numbers are not historical, this one says a
+   comparison ACROSS retirement lengths is approximate. Neutral, not amber. */
+.method-note {
+  margin: 10px 2px 0; padding: 8px 11px; border-radius: 9px;
+  font-size: 12px; line-height: 1.5; color: var(--ink-soft);
+  background: var(--panel-2, rgba(127, 127, 127, 0.07));
+  border: 1px solid var(--line);
+}
+.method-note[hidden] { display: none; }

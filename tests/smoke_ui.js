@@ -272,6 +272,58 @@ A(document.getElementById("strategy").value === "percent", "guardrail solve kept
   fire(document.getElementById("inputs"), "submit");
 })();
 
+// Length-dependent strategies (VPW, Guyton) get a comparability disclaimer,
+// but only where it is true: the draw depends on the plan length AND failures
+// are reachable. A floorless VPW plan cannot run dry, so warning there would
+// be crying wolf -- a caveat that always fires is one nobody reads.
+(function () {
+  var note = document.getElementById("horizonNote");
+  function runStrat(strat, setup) {
+    document.getElementById("strategy").value = strat;
+    fire(document.getElementById("strategy"), "change");
+    if (setup) setup();
+    fire(document.getElementById("inputs"), "submit");
+    return note;
+  }
+  // Constant dollar: draw is length-independent, so no caveat.
+  runStrat("constant", function () { document.getElementById("initialSpend").value = "45000"; });
+  A(note.hidden === true, "constant-dollar shows no comparability caveat");
+
+  // VPW with a floor: length-dependent AND able to fail -> caveat.
+  runStrat("vpw", function () {
+    document.getElementById("vpwReturn").value = "5";
+    document.getElementById("spendFloor").value = "60000";
+  });
+  A(note.hidden === false && note.textContent.indexOf("years you have left") >= 0,
+    "floored VPW explains that the length is part of the spending rule");
+  A(note.textContent.indexOf("roughly comparable") >= 0 &&
+    note.textContent.indexOf("under 2 percentage points") >= 0,
+    "...and quantifies the effect rather than just hand-waving");
+
+  // Floorless VPW cannot run dry, so nothing can be reclassified: no caveat.
+  runStrat("vpw", function () {
+    document.getElementById("vpwReturn").value = "3.4";
+    document.getElementById("spendFloor").value = "";
+  });
+  A(note.hidden === true,
+    "floorless VPW (which cannot fail) shows no caveat — the warning is not reflexive");
+
+  // Guyton at a rate that does fail -> caveat. $55k survives every cycle at
+  // 75/25, so the gate correctly suppresses it there; $65k fails 5 of 126.
+  runStrat("guyton", function () { document.getElementById("initialSpend").value = "55000"; });
+  A(note.hidden === true, "Guyton at a rate that never fails gets no caveat either");
+  runStrat("guyton", function () { document.getElementById("initialSpend").value = "65000"; });
+  A(note.hidden === false && note.textContent.indexOf("Guyton-Klinger") >= 0,
+    "Guyton gets its own wording when failures are reachable");
+
+  document.getElementById("strategy").value = "constant";
+  fire(document.getElementById("strategy"), "change");
+  document.getElementById("initialSpend").value = "40000";
+  document.getElementById("spendFloor").value = "";
+  fire(document.getElementById("inputs"), "submit");
+  A(note.hidden === true, "switching back to constant-dollar clears the caveat");
+})();
+
 // Return adjustments. These change every number on the page, so the run must
 // reflect them, out-of-range values must be refused rather than clamped, and
 // an active adjustment must be impossible to miss (badge + results note).

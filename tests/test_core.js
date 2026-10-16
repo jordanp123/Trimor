@@ -219,22 +219,56 @@ assert(rSafe.successRate === 1 && rSafe.lowestReal.min > 0,
       "...and each is zero-padded to the full horizon, so charts/percentiles are unaffected");
 
     // Accounting must balance: every start year is counted exactly once.
-    assert(h60.fullCycles + h60.truncatedFailures + h60.indeterminate === data.years.length - 0 &&
-           h60.total === h60.fullCycles + h60.truncatedFailures,
+    // Data-relative, not data.years.length: the loop starts at the first year
+    // every ALLOCATED asset has, so the identity is years - validStartOffset.
+    // The old form passed only because this case uses the default 75/25.
+    var scanned60 = data.years.length - core.validStartOffset(
+      P({ years: 60, spending: { strategy: "constant", initial: 40000 } }), data);
+    assert(h60.fullCycles + h60.truncatedFailures + h60.indeterminate === scanned60,
       "cycle accounting balances (" + h60.fullCycles + "+" + h60.truncatedFailures + "+" +
-      h60.indeterminate + " over " + data.years.length + " years)");
+      h60.indeterminate + " over " + scanned60 + " scanned start years)");
 
     // Short horizons are unchanged: no post-1997 start has run dry yet, so the
     // canonical numbers must not move.
     var h30 = at(30);
-    assert(h30.truncatedFailures === 0 && h30.fullCycles === 126,
-      "30yr accounting unchanged (126 full cycles, 0 truncated failures)");
+    // Data-relative so a yearly data refresh does not fail this spuriously.
+    var expect30 = data.years.length - 30 + 1;
+    assert(h30.truncatedFailures === 0 && h30.fullCycles === expect30,
+      "30yr accounting unchanged (" + expect30 + " full cycles, 0 truncated failures)");
+
+    // A horizon with NO fully-observed cycle must report insufficient data, not
+    // a confident 0%. Dropping the old lastStart guard made years 99..155 with
+    // a 1928-start asset all render an identical red "0.0%", and the years
+    // field stopped having any effect at all.
+    [110, 130, 155].forEach(function (N) {
+      var g = core.runHistorical(P({ years: N, allocation: { stocks: 0.6, bonds: 0.2, gold: 0.2 },
+        spending: { strategy: "constant", initial: 60000 } }), data);
+      assert(g.insufficient === true,
+        "years=" + N + " with a 1928-start asset reports insufficient data, not 0%");
+    });
+    var ok98 = core.runHistorical(P({ years: 98, allocation: { stocks: 0.6, bonds: 0.2, gold: 0.2 },
+      spending: { strategy: "constant", initial: 60000 } }), data);
+    assert(!ok98.insufficient && ok98.fullCycles >= 1,
+      "...while a horizon with at least one complete cycle still reports (" +
+      ok98.fullCycles + " full)");
 
     // Plan length still drives the strategies: a truncated cycle budgets for the
     // FULL horizon, so VPW's factor must not shorten just because data ran out.
-    var v = core.runHistorical(P({ years: 60, spending: { strategy: "vpw", vpwReturn: 0.034 } }), data);
-    assert(v.spending.firstYear > 0 && v.successRate >= 0 && v.successRate <= 1,
-      "VPW over a 60-year plan with truncated cycles stays sane");
+    // VPW's draw depends on N (yrsLeft = N - i), so lengthening the plan can
+    // lower the draw enough to move a start year from counted-failure to
+    // dropped-indeterminate -- removing a failure from the denominator and
+    // letting a LONGER plan score better. Censoring cannot fix this: the
+    // outcome genuinely is unknown. Pin it as a known, bounded limitation
+    // rather than pretending the invariant is universal.
+    var v32 = core.runHistorical(P({ years: 32,
+      spending: { strategy: "vpw", vpwReturn: 0.034, floor: 50000 } }), data);
+    var v33 = core.runHistorical(P({ years: 33,
+      spending: { strategy: "vpw", vpwReturn: 0.034, floor: 50000 } }), data);
+    assert(v32.spending.firstYear > 0 && v33.spending.firstYear > 0,
+      "VPW over truncated horizons still produces a plan");
+    assert(Math.abs(v33.successRate - v32.successRate) < 0.02,
+      "N-dependent spending keeps the horizon anomaly BOUNDED (<2pp): 32yr " +
+      (v32.successRate * 100).toFixed(2) + "% vs 33yr " + (v33.successRate * 100).toFixed(2) + "%");
   })();
 
   // ---- return adjustments (sensitivity haircut) -----------------------------

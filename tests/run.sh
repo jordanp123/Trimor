@@ -40,6 +40,14 @@ echo "== deployment parity (docker compose vs podman quadlets) =="
 if python3 "$DIR/tests/deploy_parity.py"; then :; else fail=1; fi
 echo ""
 
+# Worker parity: Monte Carlo options must survive every hop from the page
+# to the engine. The engine tests call mc.run directly, so nothing else in
+# this suite ever crosses the postMessage boundary where a field can be
+# silently dropped (blockMin/blockMax shipped inert for two commits that way).
+echo "== worker parity (page options reach the Monte Carlo engine) =="
+if python3 "$DIR/tests/worker_parity.py"; then :; else fail=1; fi
+echo ""
+
 # Guard: every runtime module must actually be referenced by index.html. (The
 # headless bundles load them regardless, so only this catches a missing <script>.)
 echo "== index.html references all runtime scripts =="

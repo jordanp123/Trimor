@@ -244,7 +244,11 @@
     // Return adjustments: refuse out-of-range rather than clamping silently,
     // so the run always matches what is on screen.
     for (const id in ADJ) {
-      const raw = $(id).value.trim();
+      // stripNum first, exactly as num() does when the engine reads this
+      // field: bare parseFloat("1,5") is 1 and passes validation, while
+      // num() yields 15 and the run silently applied 3x the cap. The two
+      // parsers have to agree or the guarantee above is not one.
+      const raw = stripNum($(id).value).trim();
       if (raw === "") continue;
       const v = parseFloat(raw);
       if (!isFinite(v) || v < -MAX_ADJ || v > MAX_ADJ)
@@ -262,8 +266,14 @@
     SWR.core.ASSETS.forEach((k) => {
       if (!adj[k]) return;
       const pct = adj[k] * 100;
-      parts.push(ADJ_LABEL[k] + " " + (pct > 0 ? "+" : "\u2212") +
-        Math.abs(pct).toFixed(2).replace(/\.?0+$/, "") + "%/yr");
+      // toFixed(2) rounds anything below 0.005 to "0.00", which the
+      // trailing-zero strip turns into "0" -- an APPLIED haircut printed as
+      // "+0%/yr" inside a banner insisting these are not historical results.
+      // Fall back to significant digits so a non-zero offset never reads 0.
+      const mag = Math.abs(pct);
+      const txt = mag >= 0.01 ? mag.toFixed(2).replace(/\.?0+$/, "")
+        : parseFloat(mag.toPrecision(2)).toString();
+      parts.push(ADJ_LABEL[k] + " " + (pct > 0 ? "+" : "\u2212") + txt + "%/yr");
     });
     return parts.join(", ");
   }
@@ -272,7 +282,8 @@
   // changes every number on the page, so it must be visible without opening
   // the section and must survive a screenshot of the headline.
   function renderAdjNote() {
-    const txt = adjSummary();
+    // The snapshot from the last run -- see state.adjSummary in run().
+    const txt = state.adjSummary || "";
     const badge = $("adjBadge"), note = $("adjNote");
     badge.hidden = !txt;
     if (txt) badge.textContent = "on";
@@ -414,6 +425,13 @@
     enableMcTab(false);
     setMode("historical");
     if ($("runMonteCarlo").checked) runMC(params, data);
+    // Snapshot what actually fed this run. The note and the printed report
+    // must describe the numbers on screen, not whatever is typed now:
+    // Cmd/Ctrl+P fires beforeprint -> buildReport() WITHOUT re-running, so
+    // reading the live inputs there could print a haircut label over
+    // unadjusted figures, omit the label from adjusted ones, or even print
+    // an out-of-range value validate() had just refused.
+    state.adjSummary = adjSummary();
     renderAdjNote();
     updateHash();
     msg("", true);
@@ -441,7 +459,7 @@
     showProgress(true, 0);
     const w = getWorker();
     if (w) {
-      w.postMessage({ type: "montecarlo", params, data, method: opts.method, trials: opts.trials, block: opts.block, seed: opts.seed });
+      w.postMessage({ type: "montecarlo", params, data, method: opts.method, trials: opts.trials, block: opts.block, blockMin: opts.blockMin, blockMax: opts.blockMax, seed: opts.seed });
     } else {
       // No Worker (e.g. opened via file://): run inline on the next tick.
       setTimeout(() => {
@@ -502,7 +520,7 @@
         showProgress(true, 0);
         msg("Finding max spending (Monte Carlo)…", true);
         armSolveTimer();
-        w.postMessage({ type: "solve", basis: "montecarlo", params, data, target, method: o.method, trials: o.trials, block: o.block, seed: o.seed });
+        w.postMessage({ type: "solve", basis: "montecarlo", params, data, target, method: o.method, trials: o.trials, block: o.block, blockMin: o.blockMin, blockMax: o.blockMax, seed: o.seed });
         return;
       }
       inline();
@@ -601,7 +619,7 @@
         gmsg("Solving the " + solveFor + " (Monte Carlo)…", true);
         armSolveTimer();
         w.postMessage({ type: "gsolve", basis: "montecarlo", params: params, data: data,
-          solveFor: solveFor, target: target, method: o.method, trials: o.trials, block: o.block, seed: o.seed });
+          solveFor: solveFor, target: target, method: o.method, trials: o.trials, block: o.block, blockMin: o.blockMin, blockMax: o.blockMax, seed: o.seed });
         return;
       }
       inline();
@@ -689,7 +707,37 @@
   function block(title, rows) { return el("div", { class: "detail-block" }, [el("h4", { text: title })].concat(rows)); }
   function noteBlock(title, text) { return el("div", { class: "detail-block" }, [el("h4", { text: title }), el("p", { class: "muted small", text: text })]); }
 
+  // Strategies whose yearly draw is a function of the PLAN LENGTH, not just of
+  // the balance: VPW amortizes over the years remaining, and Guyton suspends
+  // its capital-preservation cut inside the final 15 years. For these, changing
+  // the retirement length changes the spending RULE, not merely the period
+  // being tested -- which is why success rates across lengths are only roughly
+  // comparable, and why a longer plan can occasionally score slightly higher.
+  const LENGTH_DEPENDENT = {
+    vpw: "VPW sets each year's withdrawal from the years you have left",
+    guyton: "Guyton-Klinger stops making its capital-preservation cut inside the final 15 years",
+  };
+
+  // Shown only when such a strategy is selected AND failures are actually
+  // reachable. A floorless VPW plan cannot run dry at all, so nothing can be
+  // reclassified and the caveat would be crying wolf (measured: 0.00pp there,
+  // against 1.83pp for VPW 5% with a $60k floor).
+  function renderHorizonNote(s) {
+    const note = $("horizonNote");
+    const why = s && s.mode === "historical" && s.failed > 0 && s.spending
+      ? LENGTH_DEPENDENT[s.spending.strategy] : null;
+    note.hidden = !why;
+    if (!why) return;
+    note.textContent = why + ", so the retirement length is part of the spending rule " +
+      "and not just the stretch of history being tested. Success rates at different " +
+      "lengths are therefore only roughly comparable: a longer plan draws less each " +
+      "year, so a start year that ran dry under a shorter plan can still be solvent " +
+      "when the data runs out — unknown rather than failed, and left out of the rate. " +
+      "Measured effect: under 2 percentage points. Compare plans at one length.";
+  }
+
   function render(s) {
+    renderHorizonNote(s);
     if (!s || s.total === 0) {
       $("successKind").textContent = "";
       $("successBig").textContent = "—";
@@ -1208,7 +1256,7 @@
     rptKV(plan, "Fees / tax on withdrawals", num("feeRate", 0) + "% / " + num("taxRate", 0) + "%");
     rptKV(plan, "Inflation", $("inflationMode").value === "fixed" ? "fixed " + num("fixedInflation", 3) + "%/yr" : "historical CPI");
     rptKV(plan, "Age / sex (for mortality overlay)", Math.round(num("currentAge", 65)) + " / " + $("sex").value);
-    const adjTxt = adjSummary();
+    const adjTxt = state.adjSummary || "";
     if (adjTxt) rptKV(plan, "Return adjustments", adjTxt +
       " — results are history shifted by these offsets, not the historical record");
     if (state.montecarlo) {
@@ -1519,7 +1567,8 @@
     $("mcSeed").value = String(100000 + Math.floor(Math.random() * 900000));
     loadHash();
     MONEY_IDS.forEach((id) => formatMoneyInput($(id))); // defaults + hash values get commas
-    stampBuild(); renderDataHealth(); renderAdjNote();
+    stampBuild(); renderDataHealth();
+    state.adjSummary = adjSummary(); renderAdjNote();
     syncStrategy(); syncFreq(); updateAllocSum(); toggleFixed(); toggleMcOptions(); toggleMcBlock();
     run();
   }

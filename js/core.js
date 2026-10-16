@@ -601,15 +601,22 @@ function simulateCycle(p, ret, infl, cape, runYears) {
       if (res.complete || !res.success) cycles.push(res); // fully observed, or a known failure
       else indeterminate++;                               // outlived the data; unknowable
     }
-    if (!cycles.length) return emptySummary(N);
+    // A rate needs at least one cycle we watched for the WHOLE horizon.
+    // Without that the kept set is, by construction, nothing but known
+    // failures, so the rate is identically 0 however good the plan is -- and
+    // the horizon field goes inert (years 99..155 all reported a confident red
+    // "0.0%" for a 1928-start allocation). Removing the old lastStart guard is
+    // what exposed this; restore it in terms of what actually got observed.
+    const fullCycles = cycles.filter(function (c) { return c.complete; }).length;
+    if (!cycles.length || fullCycles === 0) return emptySummary(N);
     const summary = summarize(p, cycles, { mode: "historical" });
     summary.startYears = { first: cycles[0].startYear, last: cycles[cycles.length - 1].startYear };
     // Start years whose plan outlives the data and that were still solvent when
     // it ran out. Surfaced so the denominator is never silently narrower than
     // the history actually available.
     summary.indeterminate = indeterminate;
-    summary.truncatedFailures = cycles.filter(function (c) { return !c.complete; }).length;
-    summary.fullCycles = cycles.length - summary.truncatedFailures;
+    summary.fullCycles = fullCycles;
+    summary.truncatedFailures = cycles.length - fullCycles;
     return summary;
   }
 
@@ -711,8 +718,10 @@ function simulateCycle(p, ret, infl, cape, runYears) {
   //
   // Arithmetic, applied per year to the NOMINAL return, because that is the
   // quantity the dataset holds and it keeps the maths explainable: a 0.25%
-  // haircut lowers every year's return by exactly 0.25 points, and since
-  // inflation is a separate series the real return falls by the same amount.
+  // haircut lowers every year's NOMINAL return by exactly 0.25 points. The
+  // real return falls by a/(1+i), very slightly less -- 0.243 points at 3%
+  // inflation, 0.221 in 1979 -- because the engine deflates geometrically
+  // (port / cumInfl) rather than subtracting inflation.
   //
   // Deliberately NOT compounded or scaled by horizon -- a constant offset is
   // what users mean by "0.25% less every year", and anything cleverer would be

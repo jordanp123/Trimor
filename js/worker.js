@@ -17,6 +17,7 @@ self.onmessage = function (e) {
         method: msg.method,
         trials: msg.trials,
         block: msg.block,
+        blockMin: msg.blockMin, blockMax: msg.blockMax,
         seed: msg.seed,
         keepSeries: 250,
         onProgress: function (v) { self.postMessage({ type: "progress", value: v }); },
@@ -33,7 +34,8 @@ self.onmessage = function (e) {
       const runner = msg.basis === "montecarlo"
         ? function (pp, dd) {
             return self.SWR.mc.run(pp, dd, {
-              method: msg.method, trials: msg.trials, block: msg.block, seed: msg.seed, successOnly: true,
+              method: msg.method, trials: msg.trials, block: msg.block,
+              blockMin: msg.blockMin, blockMax: msg.blockMax, seed: msg.seed, successOnly: true,
             });
           }
         : self.SWR.core.runHistorical;
@@ -46,7 +48,8 @@ self.onmessage = function (e) {
       const runner = msg.basis === "montecarlo"
         ? function (pp, dd) {
             return self.SWR.mc.run(pp, dd, {
-              method: msg.method, trials: msg.trials, block: msg.block, seed: msg.seed, successOnly: true,
+              method: msg.method, trials: msg.trials, block: msg.block,
+              blockMin: msg.blockMin, blockMax: msg.blockMax, seed: msg.seed, successOnly: true,
             });
           }
         : self.SWR.core.runHistorical;
