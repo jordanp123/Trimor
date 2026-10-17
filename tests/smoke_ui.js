@@ -266,9 +266,116 @@ A(document.getElementById("strategy").value === "percent", "guardrail solve kept
   var lbl = document.getElementById("successLabel").textContent;
   A(lbl.indexOf("can't be judged yet") >= 0,
     "60yr caption discloses the unjudgeable later starts (" + lbl.slice(0, 120) + ")");
-  A(/retirements starting 18\d\d–19(7|8|9)\d/.test(lbl),
-    "...and the sample reaches past 1966 thanks to the known failures");
+  A(/every start from 18\d\d–1966/.test(lbl),
+    "the caption's range is the contiguous, fully-judged one (" + lbl.slice(0, 90) + ")");
+  A(/plus \d+ later starts? that ran out of money before the data ends/.test(lbl),
+    "...and the later starts that ran dry are named, not folded into the range");
   yearsEl.value = before;
+  fire(document.getElementById("inputs"), "submit");
+})();
+
+// Adjustments must say only what actually reached the results. The dangerous
+// case is a PESSIMISTIC haircut on an asset the portfolio doesn't hold: if the
+// note announced it as applied, the user would believe they had stress-tested
+// a plan they hadn't. Cash is the exception -- it also sets the monthly
+// bucket's rate, because that money sits in the same T-bills.
+(function () {
+  var note = document.getElementById("adjNote");
+  var ids = ["adjStocks", "adjBonds", "adjGold", "adjCash", "adjCorp", "adjReit", "adjSmallcap"];
+  function clear() { ids.forEach(function (id) { document.getElementById(id).value = "0"; }); }
+  function runWith(setup) {
+    clear(); setup();
+    fire(document.getElementById("inputs"), "submit");
+    return { big: document.getElementById("successBig").textContent, txt: note.textContent, hidden: note.hidden };
+  }
+  document.getElementById("strategy").value = "constant";
+  fire(document.getElementById("strategy"), "change");
+  document.getElementById("initialSpend").value = "45000";
+
+  var base = runWith(function () {});
+  // Gold -5% on 75/25: holds no gold, so NOTHING changes...
+  var gold = runWith(function () { document.getElementById("adjGold").value = "-5"; });
+  A(gold.big === base.big, "a gold haircut on a portfolio with no gold changes nothing (" + gold.big + ")");
+  // ...and the note must not claim a stress test that never ran.
+  A(!gold.hidden && gold.txt.indexOf("Returns adjusted") < 0 && gold.txt.indexOf("no effect") >= 0,
+    "...and the note says it had no effect instead of claiming it applied (" + gold.txt.slice(0, 80) + ")");
+  A(gold.txt.indexOf("unadjusted history") >= 0,
+    "...and says these are unadjusted results");
+
+  // A held asset still reports as applied.
+  var stk = runWith(function () { document.getElementById("adjStocks").value = "-1"; });
+  A(stk.txt.indexOf("Returns adjusted: stocks") >= 0 && parseFloat(stk.big) < parseFloat(base.big),
+    "a haircut on a held asset applies and is reported as applied (" + base.big + " -> " + stk.big + ")");
+
+  // Mixed: one reached, one did not -- both stated, neither overstated.
+  var mix = runWith(function () {
+    document.getElementById("adjStocks").value = "-1";
+    document.getElementById("adjGold").value = "-5";
+  });
+  A(mix.txt.indexOf("Returns adjusted: stocks") >= 0 && mix.txt.indexOf("gold") >= 0 &&
+    mix.txt.indexOf("no effect") >= 0,
+    "a mix reports what applied and what did not");
+
+  // Cash at 0% with ANNUAL withdrawals: no path to the results, so no effect.
+  var cashAnnual = runWith(function () { document.getElementById("adjCash").value = "-2"; });
+  A(cashAnnual.big === base.big && cashAnnual.txt.indexOf("no effect") >= 0,
+    "cash offset at 0% cash with annual withdrawals has no effect, and says so");
+
+  // Cash at 0% with the MONTHLY bucket: reaches the results through the bucket.
+  document.getElementById("strategy").value = "percent";
+  fire(document.getElementById("strategy"), "change");
+  document.getElementById("withdrawFreqVal").value = "monthly";
+  var mBase = runWith(function () {});
+  var mCash = runWith(function () { document.getElementById("adjCash").value = "-2"; });
+  A(mCash.txt.indexOf("through the monthly T-bill bucket") >= 0,
+    "a cash offset with the monthly bucket names that path (" + mCash.txt.slice(0, 90) + ")");
+  A(mCash.txt.indexOf("no effect") < 0,
+    "...and is NOT described as having no effect, because it reaches the results");
+
+  clear();
+  document.getElementById("withdrawFreqVal").value = "annual";
+  document.getElementById("strategy").value = "constant";
+  fire(document.getElementById("strategy"), "change");
+  document.getElementById("initialSpend").value = "40000";
+  fire(document.getElementById("inputs"), "submit");
+  A(note.hidden === true, "clearing every offset hides the note again");
+})();
+
+// Share-link gate. A link carries every input and opening it runs at once, so
+// a crafted URL could otherwise force the heaviest Monte Carlo run on whoever
+// clicks it (measured: 200k trials x 155yr = ~52s and 2.4GB). Above a budget a
+// LINK must wait for the reader to press Run -- but the reader's own Run must
+// never be held back.
+(function () {
+  var mcStarted = 0, realRunMC = null;
+  // Count Monte Carlo starts through the same hook the page uses.
+  var trialsEl = document.getElementById("mcTrials"), yearsEl = document.getElementById("years");
+  var savedT = trialsEl.value, savedY = yearsEl.value;
+  document.getElementById("runMonteCarlo").checked = true;
+  trialsEl.value = "200000"; yearsEl.value = "155";
+  document.getElementById("strategy").value = "constant";
+  fire(document.getElementById("strategy"), "change");
+
+  // Drive run() exactly as init() does for a share link.
+  SWR.ui.__runForTest(true);
+  A(document.getElementById("formMsg").textContent.indexOf("wasn't started automatically") >= 0,
+    "a heavy share link does not auto-start Monte Carlo (" +
+    document.getElementById("formMsg").textContent.slice(0, 70) + ")");
+  A(SWR.ui.__mcPending() === false,
+    "...and no Monte Carlo run is in flight");
+
+  // The reader pressing Run is explicit consent: it must run normally.
+  SWR.ui.__runForTest(false);
+  A(document.getElementById("formMsg").textContent.indexOf("wasn't started automatically") < 0,
+    "the reader's own Run is never deferred");
+
+  // A light share link (the defaults) still auto-runs as before.
+  trialsEl.value = "10000"; yearsEl.value = "30";
+  SWR.ui.__runForTest(true);
+  A(document.getElementById("formMsg").textContent.indexOf("wasn't started automatically") < 0,
+    "an ordinary share link still runs Monte Carlo automatically");
+
+  trialsEl.value = savedT; yearsEl.value = savedY;
   fire(document.getElementById("inputs"), "submit");
 })();
 

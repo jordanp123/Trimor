@@ -157,6 +157,17 @@ nonces), but it only governs deployments with **no** CSP header — when the
 header is present, browsers enforce the intersection of both policies and the
 strict nonce rule wins.
 
+**What the nonce trusts.** A valid nonce is full trust: the injected script runs
+with the same access as the app's own code. Verified against the live site,
+Cloudflare's script loads `main.js` into a hidden iframe that is reachable from
+the page, and from inside it both `parent.location.hash` (the share state, which
+holds the user's figures) and the page's input fields are readable. The app
+itself never sends either anywhere, and the script is a bot-scoring tool rather
+than a data collector, but its beacon payload cannot be inspected from here — so
+the user-facing copy deliberately claims only what *this app* does, never what
+the CDN's script does or doesn't read. Keep it that way: switching the injection
+off is the only change that would make a whole-page privacy claim true.
+
 Serve over HTTPS, and prefer an immutable/static host. No server-side runtime is
 required or recommended.
 

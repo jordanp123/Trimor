@@ -210,8 +210,23 @@ assert(rSafe.successRate === 1 && rSafe.lowestReal.min > 0,
     // The 1967-73 cohort must still be IN the 60-year sample, as known failures.
     assert(h60.truncatedFailures > 0,
       "60yr keeps start years that ran dry before the data ended (" + h60.truncatedFailures + ")");
-    assert(h60.startYears.last >= 1970,
-      "60yr sample reaches past 1966 via those failures (last start " + h60.startYears.last + ")");
+    // The quoted range must be CONTIGUOUS and fully judged. It used to be
+    // first..last-KEPT (1871-1973 at 60yr), which implied 1970-72 had been
+    // judged when they were silently excluded. Now the range is exactly the
+    // starts with a full horizon of data, and every later start that ran dry
+    // is named separately.
+    var lastFull = data.years[data.years.length - 1] - 60 + 1;
+    assert(h60.startYears.last === lastFull,
+      "the quoted range ends at the last start with a full 60 years of data (" + h60.startYears.last + ")");
+    assert(h60.fullCycles === h60.startYears.last - h60.startYears.first + 1,
+      "...and every start inside it was fully observed and judged (no holes)");
+    var lf = h60.laterFailedStarts;
+    assert(lf.length === h60.truncatedFailures && lf.length > 0,
+      "later starts that ran dry are named, one per truncated failure (" + lf.join(",") + ")");
+    assert(lf.every(function (y) { return y > h60.startYears.last; }),
+      "...all of them AFTER the contiguous range, so 'later' is literally true");
+    assert(lf.every(function (y, i) { return i === 0 || y > lf[i - 1]; }),
+      "...in chronological order");
     var late = h60.sampleSeries.filter(function (c) { return c.startYear > 1966; });
     assert(late.length > 0 && late.every(function (c) { return !c.success; }),
       "every post-1966 start in the 60yr sample is a definite failure");
@@ -235,6 +250,22 @@ assert(rSafe.successRate === 1 && rSafe.lowestReal.min > 0,
     var expect30 = data.years.length - 30 + 1;
     assert(h30.truncatedFailures === 0 && h30.fullCycles === expect30,
       "30yr accounting unchanged (" + expect30 + " full cycles, 0 truncated failures)");
+
+    // A truncated cycle is drawn only if it ran dry INSIDE observed history, so
+    // everything past its failure -- including any years past the end of the
+    // data -- is the certain $0 of a broke portfolio, never a guess about
+    // markets we have no data for. Hiding or fading that tail would make a
+    // failure look softer than it is, so the invariant is pinned instead.
+    [[40000, 60], [60000, 45], [50000, 75]].forEach(function (t) {
+      var r = core.runHistorical(P({ years: t[1], spending: { strategy: "constant", initial: t[0] } }), data);
+      r.sampleSeries.filter(function (c) { return !c.complete; }).forEach(function (c) {
+        assert(!c.success && c.failedYear + 1 <= c.observedYears,
+          "truncated " + c.startYear + " is drawn only because it failed inside observed data");
+        var tail = c.realSeries.slice(c.failedYear + 1);
+        assert(tail.every(function (v) { return v === 0; }),
+          "...and its tail after the failure is exactly $0 (" + c.startYear + ", " + t[1] + "yr)");
+      });
+    });
 
     // A horizon with NO fully-observed cycle must report insufficient data, not
     // a confident 0%. Dropping the old lastStart guard made years 99..155 with
@@ -269,6 +300,24 @@ assert(rSafe.successRate === 1 && rSafe.lowestReal.min > 0,
     assert(Math.abs(v33.successRate - v32.successRate) < 0.02,
       "N-dependent spending keeps the horizon anomaly BOUNDED (<2pp): 32yr " +
       (v32.successRate * 100).toFixed(2) + "% vs 33yr " + (v33.successRate * 100).toFixed(2) + "%");
+  })();
+
+  // ---- T-bill bucket: symmetric in sign --------------------------------------
+  // The bucket used to floor a negative rate at $0, so it credited interest in
+  // good years and discarded losses in bad ones -- a one-way bet that could only
+  // flatter a plan. History never goes negative, but any cash haircut does.
+  (function () {
+    function brute(S, rf) {
+      var m = Math.pow(1 + rf, 1 / 12) - 1, b = S, x = 0;
+      for (var k = 0; k < 12; k++) { b -= S / 12; var e = b * m; x += e; b += e; }
+      return x;
+    }
+    [-0.05, -0.01, 0, 0.002, 0.05, 0.15].forEach(function (rf) {
+      assert(Math.abs(core.bucketInterest(40000, rf) - brute(40000, rf)) < 1e-6,
+        "bucket interest matches month-by-month simulation at rf=" + (rf * 100) + "%");
+    });
+    assert(core.bucketInterest(40000, -0.01) < 0,
+      "a negative rate is a LOSS on the parked cash, not floored at zero");
   })();
 
   // ---- return adjustments (sensitivity haircut) -----------------------------

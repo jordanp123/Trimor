@@ -261,39 +261,69 @@
 
   // Human-readable summary of the active adjustments, e.g.
   // "stocks −0.25%/yr, bonds +0.25%/yr". Empty string when none are set.
-  function adjSummary() {
+  // One offset as text, e.g. "stocks −0.25%/yr". toFixed(2) alone would round
+  // anything under 0.005 to "0.00" and the trailing-zero strip would print an
+  // APPLIED haircut as "+0%/yr", so tiny offsets fall back to significant digits.
+  function fmtAdj(k, v) {
+    const pct = v * 100, mag = Math.abs(pct);
+    const txt = mag >= 0.01 ? mag.toFixed(2).replace(/\.?0+$/, "")
+      : parseFloat(mag.toPrecision(2)).toString();
+    return ADJ_LABEL[k] + " " + (pct > 0 ? "+" : "−") + txt + "%/yr";
+  }
+  const allocOf = (k) => { for (const id in ALLOC) if (ALLOC[id] === k) return num(id, 0); return 0; };
+
+  // Which offsets actually REACHED these results, and which did not.
+  //
+  // Conservative by design: an offset on an asset you hold none of changes
+  // nothing, and announcing it as applied would let someone believe they had
+  // stress-tested a plan they hadn't -- a pessimistic haircut on gold, say, on
+  // a 75/25 stock/bond portfolio. Those are reported as having no effect.
+  //
+  // Cash is the one asset with a second path: the monthly withdrawal bucket is
+  // held in the same 3-month T-bills, so a cash offset reaches the results
+  // through the bucket even at 0% cash. That coupling is correct (it is the
+  // same instrument), so it is kept -- but named, never silent.
+  function adjParts() {
     const adj = returnAdjustments();
-    if (!adj) return "";
-    const parts = [];
+    const out = { effective: [], inert: [] };
+    if (!adj) return out;
+    const bucket = $("strategy").value === "percent" && $("withdrawFreqVal").value === "monthly";
     SWR.core.ASSETS.forEach((k) => {
       if (!adj[k]) return;
-      const pct = adj[k] * 100;
-      // toFixed(2) rounds anything below 0.005 to "0.00", which the
-      // trailing-zero strip turns into "0" -- an APPLIED haircut printed as
-      // "+0%/yr" inside a banner insisting these are not historical results.
-      // Fall back to significant digits so a non-zero offset never reads 0.
-      const mag = Math.abs(pct);
-      const txt = mag >= 0.01 ? mag.toFixed(2).replace(/\.?0+$/, "")
-        : parseFloat(mag.toPrecision(2)).toString();
-      parts.push(ADJ_LABEL[k] + " " + (pct > 0 ? "+" : "\u2212") + txt + "%/yr");
+      const held = allocOf(k) > 0, viaBucket = k === "cash" && bucket, label = fmtAdj(k, adj[k]);
+      if (held && viaBucket) out.effective.push(label + " (holdings and the monthly T-bill bucket)");
+      else if (viaBucket) out.effective.push(label + " (through the monthly T-bill bucket)");
+      else if (held) out.effective.push(label);
+      else out.inert.push(label);
     });
-    return parts.join(", ");
+    return out;
   }
+  const adjAny = (a) => !!(a && (a.effective.length || a.inert.length));
 
   // Badge on the collapsed section + a note beside the results. An adjustment
   // changes every number on the page, so it must be visible without opening
   // the section and must survive a screenshot of the headline.
   function renderAdjNote() {
-    // The snapshot from the last run -- see state.adjSummary in run().
-    const txt = state.adjSummary || "";
+    // The snapshot from the last run -- see state.adj in run().
+    const a = state.adj || { effective: [], inert: [] };
     const badge = $("adjBadge"), note = $("adjNote");
-    badge.hidden = !txt;
-    if (txt) badge.textContent = "on";
-    note.hidden = !txt;
-    if (txt) {
-      note.textContent = "Returns adjusted: " + txt +
+    badge.hidden = !adjAny(a);
+    if (adjAny(a)) badge.textContent = "on";
+    note.hidden = !adjAny(a);
+    if (!adjAny(a)) return;
+    let t = "";
+    if (a.effective.length) {
+      t = "Returns adjusted: " + a.effective.join(", ") +
         ". These results are not the historical record — they are history shifted by the offsets you set.";
     }
+    if (a.inert.length) {
+      const one = a.inert.length === 1;
+      t += (t ? " " : "") + a.inert.join(", ") + (one ? " is" : " are") +
+        " set, but this portfolio holds none of " + (one ? "it" : "them") + ", so " +
+        (one ? "it has" : "they have") + " no effect" +
+        (a.effective.length ? "." : " — these results are unadjusted history.");
+    }
+    note.textContent = t;
   }
 
   // ---------- dynamic income / adjustment rows ----------
@@ -415,7 +445,8 @@
   };
 
   // ---------- running ----------
-  function run(ev) {
+  function run(ev, opts) {
+    opts = opts || {};
     if (ev) ev.preventDefault();
     const err = validate();
     if (err) return msg(err, false);
@@ -426,18 +457,27 @@
     state.historical = SWR.core.runHistorical(params, data);
     enableMcTab(false);
     setMode("historical");
-    if ($("runMonteCarlo").checked) runMC(params, data);
+    let deferredMc = false;
+    state.mcStarted = false;
+    if ($("runMonteCarlo").checked) {
+      if (opts.fromLink && mcWork() > LINK_MC_BUDGET) deferredMc = true;
+      else { state.mcStarted = true; runMC(params, data); }
+    }
     // Snapshot what actually fed this run. The note and the printed report
     // must describe the numbers on screen, not whatever is typed now:
     // Cmd/Ctrl+P fires beforeprint -> buildReport() WITHOUT re-running, so
     // reading the live inputs there could print a haircut label over
     // unadjusted figures, omit the label from adjusted ones, or even print
     // an out-of-range value validate() had just refused.
-    state.adjSummary = adjSummary();
+    state.adj = adjParts();
     renderAdjNote();
     renderTrialsCap();
     updateHash();
-    msg("", true);
+    msg(deferredMc
+      ? "This link asks for a large Monte Carlo run (" + clampTrials().toLocaleString("en-US") +
+        " trials over " + Math.round(num("years", 30)) + " years), so it wasn't started " +
+        "automatically. Press Run to start it."
+      : "", true);
   }
 
   // Variable-block streak bounds. validate() refuses min > max outright rather
@@ -446,6 +486,17 @@
   const MAX_STREAK = 30;
   const blockLo = () => Math.max(1, Math.min(MAX_STREAK, Math.round(num("mcBlockMin", 2)) || 2));
   const blockHi = () => Math.max(blockLo(), Math.min(MAX_STREAK, Math.round(num("mcBlockMax", 8)) || 8));
+
+  // Monte Carlo work a SHARE LINK may start on its own, in trial-years
+  // (trials x retirement length). A link carries every input and opening it
+  // runs immediately, so without a budget a crafted URL could force the
+  // heaviest possible run on whoever clicks it -- measured at 200k trials x
+  // 155 years: ~52s and 2.4GB, enough to kill a phone tab, and a dead Worker
+  // falls back to the main thread. 3M trial-years is the old 50k x 60yr point
+  // (~250MB measured). Only links are gated: anything the reader starts
+  // themselves still runs up to the full engine limit.
+  const LINK_MC_BUDGET = 3000000;
+  const mcWork = () => clampTrials() * Math.max(1, Math.round(num("years", 30)));
 
   // The typed value exceeds what will actually run: say so, next to the input,
   // rather than silently simulating a different number than the one on screen.
@@ -754,6 +805,27 @@
       "Measured effect: under 2 percentage points. Compare plans at one length.";
   }
 
+  // Which start years this result actually judged. Shared by the headline
+  // caption and the printed report so the two can never describe the sample
+  // differently. The quoted range is contiguous by construction (every start
+  // with a full horizon of data); starts past it appear only if they ran dry,
+  // and are named so the failures are visible rather than folded into a range.
+  function cycleCoverage(s) {
+    if (!s || !s.startYears) return "";
+    let t = "every start from " + s.startYears.first + "–" + s.startYears.last;
+    const lf = s.laterFailedStarts || [];
+    if (lf.length) {
+      t += ", plus " + lf.length + " later start" + (lf.length === 1 ? "" : "s") +
+        " that ran out of money before the data ends" +
+        (lf.length <= 5 ? " (" + lf.join(", ") + ")" : "");
+    }
+    if (s.indeterminate) {
+      t += "; " + s.indeterminate + " later start" + (s.indeterminate === 1 ? "" : "s") +
+        " can't be judged yet — still solvent where the data ends";
+    }
+    return t;
+  }
+
   function render(s) {
     renderHorizonNote(s);
     if (!s || s.total === 0) {
@@ -820,14 +892,7 @@
       $("successBig").textContent = (pct >= 99.95 ? "100" : pct.toFixed(1)) + "%";
       $("successCard").className = "success-card " + (s.successRate >= 0.95 ? "good" : s.successRate >= 0.75 ? "warn" : "bad");
       let label = s.succeeded.toLocaleString() + " of " + s.total.toLocaleString() + " " + unit + " lasted " + s.years + " years";
-      if (s.startYears) {
-        label += " · retirements starting " + s.startYears.first + "–" + s.startYears.last;
-        // Start years whose plan outlives the data and that were still solvent
-        // when it ran out. They are excluded from the rate because the outcome
-        // is genuinely unknown -- say so, or the denominator looks arbitrary.
-        if (s.indeterminate) label += " (" + s.indeterminate + " later start" +
-          (s.indeterminate === 1 ? "" : "s") + " can't be judged yet — history ends first)";
-      }
+      if (s.startYears) label += " · " + cycleCoverage(s);
       // A variable plan that DID fail carries both risks, so name the second
       // one here -- otherwise the pay cut disappears the moment ruin appears.
       if (variable) {
@@ -1193,7 +1258,7 @@
         " ran dry before the data ended (counted as failures), " + s.indeterminate +
         " still solvent when the data ended (not counted — outcome unknown)");
     }
-    if (!isMC && s.startYears) rptKV(sec, "Cycle start years", s.startYears.first + "–" + s.startYears.last);
+    if (!isMC && s.startYears) rptKV(sec, "Cycles judged", cycleCoverage(s));
     if (!isMC && s.representative && s.representative.worst) {
       const w = s.representative.worst;
       rptKV(sec, "Worst cycle", w.startYear + (w.success ? " (survived)" : " (failed in year " + (w.failedYear + 1) + ")"));
@@ -1274,9 +1339,11 @@
     rptKV(plan, "Fees / tax on withdrawals", num("feeRate", 0) + "% / " + num("taxRate", 0) + "%");
     rptKV(plan, "Inflation", $("inflationMode").value === "fixed" ? "fixed " + num("fixedInflation", 3) + "%/yr" : "historical CPI");
     rptKV(plan, "Age / sex (for mortality overlay)", Math.round(num("currentAge", 65)) + " / " + $("sex").value);
-    const adjTxt = state.adjSummary || "";
-    if (adjTxt) rptKV(plan, "Return adjustments", adjTxt +
+    const adjS = state.adj || { effective: [], inert: [] };
+    if (adjS.effective.length) rptKV(plan, "Return adjustments", adjS.effective.join(", ") +
       " — results are history shifted by these offsets, not the historical record");
+    if (adjS.inert.length) rptKV(plan, "Adjustments with no effect", adjS.inert.join(", ") +
+      " — set, but this portfolio holds none of them");
     if (state.montecarlo) {
       rptKV(plan, "Monte Carlo settings", $("mcMethod").value + ", " + Math.round(num("mcTrials", 10000)).toLocaleString("en-US") + " trials" +
         ($("mcMethod").value === "block" ? ", block " + Math.round(num("mcBlock", 5))
@@ -1498,9 +1565,9 @@
     // The badge tracks the inputs immediately; the note beside the results
     // waits for a re-run, because until then the results are unadjusted.
     Object.keys(ADJ).forEach((id) => $(id).addEventListener("input", () => {
-      const txt = adjSummary();
-      $("adjBadge").hidden = !txt;
-      if (txt) $("adjBadge").textContent = "on";
+      const any = adjAny(adjParts());
+      $("adjBadge").hidden = !any;
+      if (any) $("adjBadge").textContent = "on";
     }));
     // One source of truth for the limit: the engine defines it, the input's
     // max advertises it, and the hint explains it when exceeded.
@@ -1588,18 +1655,25 @@
     // reproduces its exact run. The user can also type a seed of their own --
     // nothing touches this field again until the next reload.
     $("mcSeed").value = String(100000 + Math.floor(Math.random() * 900000));
-    loadHash();
+    const fromLink = loadHash();
     MONEY_IDS.forEach((id) => formatMoneyInput($(id))); // defaults + hash values get commas
     stampBuild(); renderDataHealth();
-    state.adjSummary = adjSummary(); renderAdjNote();
+    state.adj = adjParts(); renderAdjNote();
     syncStrategy(); syncFreq(); updateAllocSum(); toggleFixed(); toggleMcOptions(); toggleMcBlock();
-    run();
+    run(null, { fromLink });
   }
 
   // Minimal test hook: lets the headless suite inject a failed data check and
   // assert the banner actually reacts (a warning nobody can test is a warning
   // nobody can trust). Read-only rendering; nothing here mutates state.
-  SWR.ui = { renderDataHealth };
+  // Test hooks. __runForTest drives run() exactly as init() does for a share
+  // link (fromLink=true) or as the Run button does (false); __mcPending reports
+  // whether a Monte Carlo pass was started. Neither changes behaviour.
+  SWR.ui = {
+    renderDataHealth,
+    __runForTest: (fromLink) => run(null, { fromLink: !!fromLink }),
+    __mcPending: () => !!state.mcStarted,
+  };
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();

@@ -89,7 +89,13 @@
   // (no monthly loop). `rf` is the year's annual T-bill rate; 0 (or null, pre-
   // 1928 when T-bills didn't exist) yields exactly 0 interest.
   function bucketInterest(spend, rf) {
-    if (!(rf > 0) || !(spend > 0)) return 0;
+    // Zero is special-cased only because rf/m below is 0/0 there. A NEGATIVE
+    // rate must flow through: it is a real (small) loss on the parked cash.
+    // Flooring it at 0 made the bucket a one-way bet -- interest credited in
+    // good years, losses discarded in bad -- which only ever flattered a plan.
+    // History never goes negative (lowest T-bill year +0.03%), but any cash
+    // haircut under the return-adjustments panel does.
+    if (!rf || !(spend > 0) || !(rf > -1)) return 0;
     const m = Math.pow(1 + rf, 1 / 12) - 1; // equivalent monthly rate
     return spend * (1 + rf) - (spend / 12) * (1 + m) * (rf / m);
   }
@@ -440,6 +446,11 @@ function simulateCycle(p, ret, infl, cape, runYears) {
         // useful together, and callers ranking cycles need both.
         startYear: c.startYear, series: c.series, realSeries: c.realSeries,
         success: c.success, failedYear: c.failedYear,
+        // How much of this cycle is observed history. A truncated cycle is only
+        // ever drawn if it ran dry INSIDE the data, so everything past
+        // observedYears is the certain $0 after that failure -- never a guess
+        // about markets we have no data for. Carried so that stays checkable.
+        complete: c.complete !== false, observedYears: c.observedYears,
         endValue: c.endValue, role: i === worst ? "worst" : i === best ? "best" : i === medianIdx ? "median" : "",
       });
     });
@@ -469,6 +480,7 @@ function simulateCycle(p, ret, infl, cape, runYears) {
   function cycleMeta(c) {
     return {
       startYear: c.startYear, success: c.success, failedYear: c.failedYear,
+      complete: c.complete !== false, observedYears: c.observedYears,
       endValue: c.endValue, endValueReal: c.endValueReal,
     };
   }
@@ -610,7 +622,17 @@ function simulateCycle(p, ret, infl, cape, runYears) {
     const fullCycles = cycles.filter(function (c) { return c.complete; }).length;
     if (!cycles.length || fullCycles === 0) return emptySummary(N);
     const summary = summarize(p, cycles, { mode: "historical" });
-    summary.startYears = { first: cycles[0].startYear, last: cycles[cycles.length - 1].startYear };
+    // The KEPT set is not contiguous: past the full-data range it holds only
+    // the starts that ran dry, while still-solvent ones are left out. Quoting
+    // first..last-kept therefore implied years were judged that were not (a
+    // 60-year plan read "1871-1973" with 1970-72 silently missing). So report
+    // the range that IS contiguous -- every start with a full horizon of data,
+    // all of them judged -- and name the later failures separately. Naming
+    // them also makes the failures more visible, never less.
+    summary.startYears = { first: cycles[0].startYear, last: lastYear - N + 1 };
+    summary.laterFailedStarts = cycles
+      .filter(function (c) { return !c.complete; })
+      .map(function (c) { return c.startYear; });
     // Start years whose plan outlives the data and that were still solvent when
     // it ran out. Surfaced so the denominator is never silently narrower than
     // the history actually available.
