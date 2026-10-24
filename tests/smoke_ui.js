@@ -338,12 +338,32 @@ function state_worst() {
   A(g("formMsg").textContent.indexOf("between 0% and 100%") >= 0, "an impossible benefit share refuses the run");
   g("ssCutPct").value = "78"; submit();
 
-  // --- 3) partner ---
+  // --- 3) partner + longevity ---
   g("partnerOn").checked = false; fire(g("partnerOn"), "change"); submit();
   A(g("rbdTitle").textContent === "Will your money outlast you?", "single-person title by default");
-  A(g("rbdSub").textContent.indexOf("likely optimistic") >= 0 && g("rbdSub").textContent.indexOf("likely conservative") < 0,
-    "the life-table caption says it errs OPTIMISTIC (it used to claim the opposite)");
-  var singleDead = parseFloat((g("rbdSub").textContent.match(/(\d+)% chance deceased/) || [0, "NaN"])[1]);
+  var sub = function () { return g("rbdSub").textContent; };
+  var deadPct = function () { return parseFloat((sub().match(/(\d+)% chance deceased/) || [0, "NaN"])[1]); };
+  A(g("longevity").value === "2" && sub().indexOf("read 2 years younger") >= 0,
+    "by default the life table is read 2 years younger, and the caption says so");
+  A(sub().indexOf("conservative") < 0 && sub().indexOf("may still understate how long you live") >= 0,
+    "...and even adjusted, the caption never claims to be conservative");
+  var deadAt2 = deadPct();
+  g("longevity").value = "0"; fire(g("longevity"), "change");
+  A(sub().indexOf("as published") >= 0 && sub().indexOf("likely optimistic") >= 0 && sub().indexOf("likely conservative") < 0,
+    "the raw table is labelled as published and as erring OPTIMISTIC (it used to claim the opposite)");
+  var deadAt0 = deadPct();
+  A(/"longevity":"?0/.test(decodeURIComponent(history._last.slice(1))), "a non-default longevity is carried in the share link");
+  g("longevity").value = "6"; fire(g("longevity"), "change");
+  var deadAt6 = deadPct();
+  A(deadAt0 > deadAt2 && deadAt2 > deadAt6,
+    "each step younger lowers the chance of having died by the end (" + deadAt0 + "% -> " + deadAt2 + "% -> " + deadAt6 + "%)");
+  var ageNow = Math.round(+g("currentAge").value);
+  var leAt6 = +(sub().match(/life expectancy ≈ age (\d+)/) || [0, NaN])[1];
+  A(leAt6 === Math.round(ageNow + SWR.mortality.lifeExpectancy(ageNow - 6, g("sex").value)),
+    "the quoted life expectancy is the setback table's, added to your REAL age (" + leAt6 + ")");
+  g("longevity").value = "2"; fire(g("longevity"), "change");
+  A(!/"longevity"/.test(decodeURIComponent(history._last.slice(1))), "...and the default stays out of the link, like every default");
+  var singleDead = deadPct();
   g("partnerOn").checked = true; fire(g("partnerOn"), "change"); submit();
   A(g("partnerFields").hidden === false && g("rbdTitle").textContent === "Will your money outlast you both?",
     "with a partner, the fields show and the chart asks about both of you");

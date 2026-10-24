@@ -132,7 +132,7 @@ var DEFAULTS = {
   ssCutOn: { type: "checkbox", checked: true }, ssCutPct: { type: "number", value: "78" },
   ssCutYear: { type: "number", value: "2032" }, planYear: { type: "number", value: "" },
   partnerOn: { type: "checkbox", checked: false }, partnerAge: { type: "number", value: "65" },
-  partnerSex: { type: "select-one", value: "female" },
+  partnerSex: { type: "select-one", value: "female" }, longevity: { type: "select-one", value: "2" },
   allocStocks: { type: "number", value: "75" }, allocBonds: { type: "number", value: "25" },
   allocGold: { type: "number", value: "0" }, allocCash: { type: "number", value: "0" },
   allocCorp: { type: "number", value: "0" }, allocReit: { type: "number", value: "0" }, allocSmallcap: { type: "number", value: "0" },

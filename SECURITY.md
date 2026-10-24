@@ -84,13 +84,16 @@ allocation:
 | Income / adjustment rows | ≤ **50** each | `applyState` slices the arrays |
 | Retirement length (N) | ≤ dataset length (155) | `validate()` + clamp in `buildParams` |
 | Starting portfolio | finite, ≤ $10T | `validate()` (rejects `Infinity`) |
-| Monte Carlo trials | ≤ **50,000** | `clampTrials` **and** a hard cap inside `mc.run` |
+| Monte Carlo trials | ≤ **200,000** | `clampTrials` **and** a hard cap inside `mc.run` |
+| Monte Carlo a share link may start on its own | ≤ **3,000,000** trial-years (trials × years) | `LINK_MC_BUDGET` in `run()` |
 | Bisection solver | fixed 28 iterations | `solveSpending` |
 
 The caps are applied in **two independent layers** (the UI and the engine), so
-the compute core stays safe even if it’s ever called directly. Worst-case Monte
-Carlo memory (50,000 trials × 155 years) is bounded to roughly ~125 MB held
-transiently inside the isolated Worker, which cannot take down the page.
+the compute core stays safe even if it’s ever called directly. The heaviest run
+the engine allows (200,000 trials × 155 years) was measured at about 52 s and
+2.4 GB, enough to kill a phone tab, so a share link cannot start it by itself:
+opening a link runs Monte Carlo automatically only up to 3,000,000 trial-years
+(about 250 MB measured), and anything heavier waits for the reader to start it.
 
 These bounds are exercised by an automated test: `tests/security_test.js` loads
 the whole app with a hostile hash (100,000 income rows, `years: 1e9`,
@@ -131,6 +134,20 @@ in a **podman secret**, outside the deploy directory entirely; the Docker
 deployment keeps it in `.env` (root-owned, `chmod 600`), which the update script
 re-asserts on every run. Both stacks apply identical container hardening, and
 `tests/deploy_parity.py` fails the suite if they drift apart.
+
+**Only signed commits deploy.** The nightly job builds whatever the GitHub
+repo's branch holds, so both update scripts refuse to deploy unless every new
+commit is signed by an SSH key listed in a server-local trust list
+(`~/.config/webswr/allowed_signers`). The list lives outside the webroot and the
+checkout, so no commit can edit it, and the script refuses one that another
+user could write. A stolen GitHub login can push code but cannot sign it. Every
+commit since the deployed one must verify, not just the tip, so a foreign commit
+stays refused after a signed one lands on top of it; a first clone is verified
+before it becomes the checkout; a force-pushed history is refused outright; and
+any refusal aborts the run with the site still serving the last build that
+passed. `tests/signed_deploy_test.sh` runs the gate's exact code against real
+signed, unsigned and foreign-signed commits. Setup: "Signed commits" in
+`deploy/README.md`.
 
 The app is safe opened directly, but when hosting it, also send these as **HTTP
 response headers** (a header CSP is stronger than the `<meta>` fallback, and

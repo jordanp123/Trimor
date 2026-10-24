@@ -28,6 +28,7 @@ this.__SWR_TEST_HASH = "#" + JSON.stringify({
   partnerOn: 1,
   partnerAge: "1e308",      // must be clamped when the chart reads it
   partnerSex: "<img src=x onerror=alert(1)>", // not an option: must stay inert
+  longevity: "__proto__",   // not an option: must fall back to the default setback, never the raw table
   inc: _inc,
   adj: _adj,
 });

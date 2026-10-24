@@ -40,6 +40,13 @@ echo "== deployment parity (docker compose vs podman quadlets) =="
 if python3 "$DIR/tests/deploy_parity.py"; then :; else fail=1; fi
 echo ""
 
+# Signed-commit gate: the nightly deploy must refuse unsigned and foreign-signed
+# commits. Runs the gate's exact text from both update scripts against real
+# throwaway repositories (needs git and ssh-keygen, both stock on macOS).
+echo "== signed-commit gate (only commits signed by a trusted key deploy) =="
+if bash "$DIR/tests/signed_deploy_test.sh"; then :; else fail=1; fi
+echo ""
+
 # Worker parity: Monte Carlo options must survive every hop from the page
 # to the engine. The engine tests call mc.run directly, so nothing else in
 # this suite ever crosses the postMessage boundary where a field can be

@@ -18,7 +18,7 @@
     "strategy", "initialSpend", "spendPercent", "withdrawFreqVal", "vpwReturn", "capeA", "capeB", "gkGuard", "gkAdjust",
     "spendFloor", "spendCeiling", "inflationMode", "fixedInflation", "taxRate",
     "adjStocks", "adjBonds", "adjGold", "adjCash", "adjCorp", "adjReit", "adjSmallcap",
-    "ssCutOn", "ssCutPct", "ssCutYear", "planYear", "partnerOn", "partnerAge", "partnerSex",
+    "ssCutOn", "ssCutPct", "ssCutYear", "planYear", "partnerOn", "partnerAge", "partnerSex", "longevity",
     "runMonteCarlo", "mcMethod", "mcTrials", "mcBlock", "mcBlockMin", "mcBlockMax", "mcSeed", "targetSuccess",
     "gsolveTarget",
   ];
@@ -1271,6 +1271,23 @@
     });
   }
 
+  // Years to read the life table younger by: an actuarial "age setback". The
+  // SSA period table understates how long people live -- it freezes today's
+  // death rates (the 2026 Trustees cohort table gives someone turning 65 in
+  // 2026 about 1.1 more years) and it is a population average, while longevity
+  // climbs with income. Living longer is the conservative assumption here, so
+  // the default reads the table 2 years younger, which roughly closes that
+  // cohort gap at 65. Links made before this setting existed open at the
+  // default and so show a longer life than they did: the correction, not a
+  // regression. Only the select's own options count -- anything else, such as
+  // a hostile or garbled share link, gets the default, never the raw table.
+  const LONGEVITY_OPTIONS = ["0", "2", "4", "6"];
+  const LONGEVITY_DEFAULT = 2;
+  const longevitySetback = () => {
+    const v = $("longevity").value;
+    return LONGEVITY_OPTIONS.indexOf(v) >= 0 ? +v : LONGEVITY_DEFAULT;
+  };
+
   // "Rich, broke, or dead?" — combine the simulation's failure probability with
   // SSA survival probabilities for the given age/sex. Independent of real/nominal,
   // so it re-renders cheaply when age/sex change (no re-simulation needed).
@@ -1289,11 +1306,14 @@
     const two = $("partnerOn").checked;
     const pAge = Math.max(18, Math.min(110, Math.round(num("partnerAge", 65))));
     const pSex = $("partnerSex").value;
+    // The setback shifts only which row of the table each person is read
+    // from; the chart's axis and the ages quoted below stay the real ones.
+    const k = longevitySetback();
     const survival = two
-      ? SWR.mortality.jointSurvivalCurve(age, sex, pAge, pSex, s.years)
-      : SWR.mortality.survivalCurve(age, sex, s.years);
+      ? SWR.mortality.jointSurvivalCurve(age - k, sex, pAge - k, pSex, s.years)
+      : SWR.mortality.survivalCurve(age - k, sex, s.years);
     SWR.charts.richBrokeDead($("rbdCanvas"), { years: s.years, survival, brokeByYear: s.brokeByYear, startAge: age });
-    const le = two ? SWR.mortality.jointLifeExpectancy(age, sex, pAge, pSex) : SWR.mortality.lifeExpectancy(age, sex);
+    const le = two ? SWR.mortality.jointLifeExpectancy(age - k, sex, pAge - k, pSex) : SWR.mortality.lifeExpectancy(age - k, sex);
     const deadByEnd = (1 - (survival[s.years] || 0)) * 100;
     $("rbdTitle").textContent = two ? "Will your money outlast you both?" : "Will your money outlast you?";
     // Say which table this is and which way it errs. A PERIOD table freezes
@@ -1301,13 +1321,16 @@
     // from mortality improvement, so it overstates dying and therefore
     // understates longevity risk -- the direction that FLATTERS a plan. This
     // caption used to call that "likely conservative", the opposite of the
-    // comment above it and of the Help text; it now says which way it errs.
-    $("rbdSub").textContent = "SSA period life table · " +
+    // comment above it and of the Help text; it now says which way it errs,
+    // and with a setback it still never claims the result is conservative:
+    // two years closes the cohort gap only for people retiring about now.
+    $("rbdSub").textContent = (k ? "SSA life table read " + k + " years younger" : "SSA period life table as published") + " · " +
       (two ? "second death expected around your age " + Math.round(age + le) +
              " · " + deadByEnd.toFixed(0) + "% chance you've both died by year " + s.years
            : "life expectancy ≈ age " + Math.round(age + le) +
              " · " + deadByEnd.toFixed(0) + "% chance deceased by year " + s.years) +
-      " · likely optimistic: period tables ignore future gains in life expectancy, so you may live longer than shown";
+      (k ? " · may still understate how long you live, especially if you're decades from retirement or your income or health is well above average"
+         : " · likely optimistic: period tables ignore future gains in life expectancy and higher incomes live longer, so you may live longer than shown");
   }
 
   function redrawCharts() {
@@ -1477,6 +1500,9 @@
     // integer year only; anything else leaves the field at this year.
     const py = +o.py;
     if (!("planYear" in o) && Number.isInteger(py) && py >= 2000 && py <= 2200) $("planYear").value = String(py);
+    // A setback the select doesn't offer would leave it showing nothing while
+    // the chart quietly used the default; show the default it actually uses.
+    if (LONGEVITY_OPTIONS.indexOf($("longevity").value) < 0) $("longevity").value = String(LONGEVITY_DEFAULT);
     // Cap the row count so a hostile hash can't spawn a million DOM nodes.
     // Notes are optional trailing strings (older links lack them); anything
     // non-string from a crafted hash is dropped, and length is capped.
@@ -1642,7 +1668,8 @@
     rptKV(plan, "Inflation", $("inflationMode").value === "fixed" ? "fixed " + num("fixedInflation", 3) + "%/yr" : "historical CPI");
     rptKV(plan, "Age / sex (for mortality overlay)", Math.round(num("currentAge", 65)) + " / " + $("sex").value +
       ($("partnerOn").checked ? "; partner " + Math.round(num("partnerAge", 65)) + " / " + $("partnerSex").value +
-        " (money must last to the second death)" : ""));
+        " (money must last to the second death)" : "") +
+      (longevitySetback() ? "; life table read " + longevitySetback() + " years younger" : "; SSA life table as published"));
     // From the params of the run being printed, not the live inputs: Cmd/Ctrl+P
     // rebuilds this without re-running.
     const sc = state.params && state.params.ssCut;
@@ -1901,6 +1928,7 @@
     };
     $("currentAge").addEventListener("input", reRbd);
     $("sex").addEventListener("change", reRbd);
+    $("longevity").addEventListener("change", reRbd);
     $("addIncome").addEventListener("click", () => addFlowRow($("incomeRows"), false, {}));
     $("addAdjust").addEventListener("click", () => addFlowRow($("adjustRows"), true, {}));
     $("withdrawFreq").querySelectorAll("button").forEach((b) =>

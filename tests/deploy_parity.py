@@ -180,9 +180,28 @@ for label, sh in (("docker", d_sh), ("podman", p_sh)):
     start = sh.rindex("up -d") if "up -d" in sh else sh.rindex('restart "$TUNNEL_UNIT"')
     check(prune > start, "%s: prune runs after the containers are up" % label)
 
+# The signed-commit gate is ONE piece of code kept in two files: the copies
+# must match byte for byte (tests/signed_deploy_test.sh runs that text against
+# real signed and unsigned commits), and each script must verify before it
+# touches the webroot, with no unverified `git pull` left anywhere.
+def gate(sh):
+    m = re.search(r"^# >>> signed-commit gate.*?^# <<< signed-commit gate[^\n]*\n", sh, re.M | re.S)
+    return m.group(0) if m else ""
+
+
+check(gate(d_sh) and gate(d_sh) == gate(p_sh),
+      "both scripts carry the signed-commit gate, byte-identical")
+for label, sh in (("docker", d_sh), ("podman", p_sh)):
+    check(not re.search(r"^[^#\n]*\bgit\b[^\n]*\bpull\b", sh, re.M),
+          "%s: no unverified `git pull` remains" % label)
+    calls = [m.start() for m in re.finditer(r'^sync_verified_checkout "\$REPO_URL"', sh, re.M)]
+    check(len(calls) == 1 and 'check_signers "$SIGNERS"' in sh
+          and sh.index('check_signers "$SIGNERS"') < calls[0] < sh.index("rm -rf css"),
+          "%s: trust list checked, then the checkout verified, before the webroot is touched" % label)
+
 # The webroot is rebuilt from the same list, and the same fetch outputs return.
-d_rm = re.search(r"rm -rf ([^\n]+)", d_sh).group(1)
-p_rm = re.search(r"rm -rf ([^\n]+)", p_sh).group(1)
+d_rm = re.search(r"rm -rf (css [^\n]+)", d_sh).group(1)
+p_rm = re.search(r"rm -rf (css [^\n]+)", p_sh).group(1)
 check(d_rm == p_rm, "both scripts wipe the same webroot paths (%s)" % d_rm)
 d_out = re.search(r"for f in ([^;\n]+); do", d_sh).group(1)
 p_out = re.search(r"for f in ([^;\n]+); do", p_sh).group(1)

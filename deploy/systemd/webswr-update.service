@@ -1,4 +1,5 @@
-# Daily refresh: git pull, regenerate market/CAPE data, rebuild, restart.
+# Daily refresh: fetch + verify signed commits, regenerate market/CAPE data,
+# rebuild, restart.
 # Driven by webswr-update.timer. Run it by hand any time with:
 #   systemctl --user start webswr-update.service
 # and watch it with:

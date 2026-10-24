@@ -11,7 +11,9 @@
 #   WEBSWR_BASE=/path/to/webroot webswr-update.sh
 # (timer runs need nothing extra -- the unit carries the path.)
 #
-# Same failsafe ordering as the Docker script: pull before touching the webroot,
+# Same failsafe ordering as the Docker script: verify and update the checkout
+# before touching the webroot (only commits signed by a key in
+# ~/.config/webswr/allowed_signers deploy -- see the signed-commit gate below),
 # build the new image before pruning anything -- any failure aborts (set -e) and
 # the running containers keep serving last-known-good. If the new image starts
 # but the container fails to come up, the previous image is restored. The braces
@@ -110,13 +112,131 @@ trap 'echo "=== ABORTED (exit $?) $(date -u +%FT%TZ) ==="' ERR
 
 CHECKOUT="$BASE/$CHECKOUT_DIR"
 
-# First run on a fresh server: clone the repo. Day-to-day: pull. A failed
-# clone/pull aborts with the webroot untouched.
-if [ ! -d "$CHECKOUT/.git" ]; then
-  git clone "$REPO_URL" "$CHECKOUT"
-fi
-cd "$CHECKOUT"
-git pull
+# >>> signed-commit gate ------------------------------------------------------
+# Byte-identical in update.sh and deploy/bin/webswr-update.sh: deploy_parity.py
+# fails the suite if the two copies drift, and signed_deploy_test.sh runs this
+# exact text against real signed, unsigned and foreign-signed commits.
+#
+# Why: this job deploys whatever the GitHub repo's branch holds, so without a
+# check a stolen GitHub login would reach every visitor by the next morning. A
+# signature from a key the operator listed proves a commit came from the
+# operator's own machine, whoever controls the GitHub account.
+#
+# The trust list (allowed_signers, one key per line) lives OUTSIDE the webroot
+# and the checkout, so no commit -- signed or not -- can edit it. Every check
+# runs BEFORE the checkout moves: any doubt aborts the run, and the site keeps
+# serving the last build that passed.
+
+# check_signers FILE -- refuse to deploy without a trust list we can rely on.
+check_signers() {
+  local f="$1" v p
+  command -v ssh-keygen >/dev/null || {
+    echo "FATAL: ssh-keygen (OpenSSH) is required to verify commit signatures" >&2; return 1; }
+  v="$(git --version | sed -n 's/^git version \([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\1.\2/p')"
+  case "$v" in
+    ""|1.*|2.[0-9]|2.[12][0-9]|2.3[0-3])
+      echo "FATAL: git ${v:-(unknown version)} cannot verify SSH commit signatures; 2.34+ is required" >&2
+      return 1 ;;
+  esac
+  if [ -h "$f" ]; then
+    echo "FATAL: $f is a symlink -- the trusted-signer list must be a regular file" >&2; return 1
+  fi
+  if [ ! -f "$f" ]; then
+    echo "FATAL: no trusted-signer list at $f -- refusing to deploy." >&2
+    echo "  Every deployed commit must be signed by a key listed there. Add one line per" >&2
+    echo "  signer, built from the PUBLIC half of the key that signs your commits:" >&2
+    echo "    you@example.com namespaces=\"git\" ssh-ed25519 AAAA..." >&2
+    echo "  See \"Signed commits\" in deploy/README.md." >&2
+    return 1
+  fi
+  # Anyone who can edit the list can deploy, so the file and its directory
+  # must belong to this account (or root) and be writable by no one else.
+  for p in "$f" "$(dirname "$f")"; do
+    case "$(ls -ldn "$p" | awk '{print $3}')" in
+      "$(id -u)"|0) ;;
+      *) echo "FATAL: $p belongs to another user, who could change who may deploy" >&2; return 1 ;;
+    esac
+    case "$(ls -ld "$p" | cut -c6,9)" in
+      *w*) echo "FATAL: $p is writable by other users -- chmod go-w $p" >&2; return 1 ;;
+    esac
+  done
+  grep -q '^[^#[:space:]]' "$f" || {
+    echo "FATAL: $f lists no keys, so every commit would be refused" >&2; return 1; }
+}
+
+# verify_commits FILE COMMIT... -- fail unless EVERY commit carries a valid
+# signature from a key listed in FILE. Current git already refuses a good
+# signature from an unlisted key; minTrustLevel=fully insists on a listed one
+# whatever this git version's defaults or a host-wide setting say.
+verify_commits() {
+  local f="$1" c why
+  shift
+  for c in "$@"; do
+    if ! git -c gpg.ssh.allowedSignersFile="$f" -c gpg.minTrustLevel=fully \
+         verify-commit "$c" >/dev/null 2>&1; then
+      case "$(git -c gpg.ssh.allowedSignersFile="$f" log -1 --format='%G?' "$c")" in
+        N) why="is not signed" ;;
+        U) why="is signed by a key that is not in $f" ;;
+        B) why="has a BAD signature (changed after it was signed?)" ;;
+        X|Y|R) why="is signed by an expired or revoked key" ;;
+        *) why="has a signature that could not be checked" ;;
+      esac
+      echo "FATAL: commit $c $why -- refusing to deploy" >&2
+      return 1
+    fi
+  done
+}
+
+# sync_verified_checkout REPO_URL DIR FILE -- move the checkout DIR up to its
+# upstream ONLY if every commit that adds is signed by a key in FILE; otherwise
+# leave it exactly where it was and fail. Every step is checked explicitly
+# rather than left to set -e, which bash silently switches off inside a
+# function called from if/&&/|| -- a gate must not depend on how it is called.
+sync_verified_checkout() {
+  local url="$1" dir="$2" f="$3"
+  if [ ! -d "$dir/.git" ]; then
+    # First run: clone beside DIR and verify the tip before it can become the
+    # checkout. A refused clone -- or a run killed halfway -- must never be
+    # mistaken next time for a baseline that was already deployed.
+    rm -rf "$dir.unverified" || return 1
+    git clone --quiet "$url" "$dir.unverified" || return 1
+    if ! (cd "$dir.unverified" && verify_commits "$f" HEAD); then
+      rm -rf "$dir.unverified"
+      return 1
+    fi
+    mv "$dir.unverified" "$dir" || return 1
+    echo "signed-commit gate: first clone, tip $(git -C "$dir" rev-parse --short HEAD) verified"
+    return 0
+  fi
+  (
+    cd "$dir" || exit 1
+    git fetch --quiet || exit 1
+    new="$(git rev-parse --verify --quiet '@{upstream}^{commit}')" || {
+      echo "FATAL: the checkout's branch has no upstream to deploy from" >&2; exit 1; }
+    # A rewritten history (a force-push, or commits made in the checkout) is
+    # refused outright rather than reconciled: it needs a human to look at it.
+    git merge-base --is-ancestor HEAD "$new" || {
+      echo "FATAL: upstream no longer contains the deployed commit $(git rev-parse --short HEAD) -- refusing rewritten history" >&2
+      exit 1; }
+    # Every commit since the deployed one, not just the tip: a foreign commit
+    # stays refused even after a signed commit lands on top of it.
+    commits="$(git rev-list "HEAD..$new")" || exit 1
+    verify_commits "$f" $commits || exit 1
+    git merge --ff-only --quiet "$new" || exit 1
+    set -- $commits
+    if [ $# -eq 0 ]; then
+      echo "signed-commit gate: no new commits; staying at $(git rev-parse --short HEAD)"
+    else
+      echo "signed-commit gate: $# new commit(s), all signed by a trusted key; now at $(git rev-parse --short HEAD)"
+    fi
+  )
+}
+# <<< signed-commit gate ------------------------------------------------------
+
+# The trust list sits with this account's other config, outside the webroot.
+SIGNERS="$HOME/.config/webswr/allowed_signers"
+check_signers "$SIGNERS"
+sync_verified_checkout "$REPO_URL" "$CHECKOUT" "$SIGNERS"
 
 cd "$BASE"
 rm -rf css data index.html js tools tests
@@ -161,7 +281,7 @@ if [ -f "$BASE/.env" ]; then chmod 600 "$BASE/.env"; fi
 # containers keep serving; a failed pull/build aborts here (set -e) with the
 # running site untouched. --pull keeps the nginx base patched (without it the
 # cached base would never update again: no CVE fixes). daemon-reload picks up
-# any quadlet edits that arrived with this morning's git pull.
+# any quadlet edits that arrived with this morning's verified update.
 podman pull "$TUNNEL_IMAGE"
 # Keep the currently-deployed image so a bad build can be rolled back. (Ignore
 # failure: on the very first run there is nothing to tag yet.)

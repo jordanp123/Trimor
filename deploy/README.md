@@ -94,8 +94,10 @@ cp Trimor/config.webswr.example config.webswr    # edit if you want non-stock va
 ```
 
 Then follow the **Next steps** it prints: create the tunnel-token secret, enable
-lingering, run the updater once (it assembles the webroot, fetches data, builds
-and starts everything), and enable the timer.
+lingering, list the key(s) allowed to deploy (see [Signed commits](#signed-commits-the-deploy-gate)
+— the updater refuses to run without that list), run the updater once (it
+assembles the webroot, fetches data, builds and starts everything), and enable
+the timer.
 
 `install.sh` is safe to re-run — after editing a unit, pulling a new version, or
 moving the webroot. Flags: `--yes` to accept the detected webroot, `--base-dir
@@ -136,6 +138,9 @@ sed -n 's/^TUNNEL_TOKEN=//p' ~/webswr/.env | tr -d '\r\n' \
   | podman secret create webswr-tunnel-token -
 podman secret ls
 ~/webswr/Trimor/deploy/install.sh --yes
+# the trust list: see "Signed commits" below
+mkdir -p ~/.config/webswr && chmod 700 ~/.config/webswr
+printf '%s\n' 'you@example.com namespaces="git" ssh-ed25519 AAAA...' > ~/.config/webswr/allowed_signers
 systemctl --user start webswr-update.service     # assembles, builds, starts
 journalctl --user -u webswr-cloudflared -n 30    # expect a second connector to register
 ```
@@ -181,7 +186,8 @@ same `config.webswr` parsing and validation, same logging (start banner,
 `update.log` in the webroot), same fetch ordering and symlink-guarded copy-back.
 It differs only where rootless requires it — no `setpriv`, no `chown` — and it
 **rolls back to the previous image** if a fresh build starts but the container
-fails to come up. It refuses to run as root.
+fails to come up. It refuses to run as root. Like `update.sh`, it deploys only
+commits signed by a key you have listed — see the next section.
 
 ```sh
 systemctl --user start webswr-update.service      # run it now
@@ -192,6 +198,83 @@ systemctl --user list-timers webswr-update.timer  # when is it next due?
 Run it directly with `WEBSWR_BASE=/path/to/webroot ~/.local/bin/webswr-update.sh`
 if your webroot is not `~/webswr` (the timer needs nothing extra — the unit
 carries the path).
+
+## Signed commits (the deploy gate)
+
+The nightly job deploys whatever is on the repo's branch, so without a check a
+stolen GitHub login would reach every visitor by the next morning. Both update
+scripts therefore refuse to deploy a commit unless it is **signed by a key you
+listed on the server**. Someone holding your GitHub account can push code, but
+they cannot produce that signature: the private key never leaves the machine
+you commit from.
+
+On every run, before anything else is touched:
+
+- The trust list is `~/.config/webswr/allowed_signers` for the account the job
+  runs as (`/root/.config/webswr/allowed_signers` for the Docker `update.sh`).
+  It lives outside the webroot and the checkout, so no commit — signed or not —
+  can edit it, and the script refuses one that another user could write.
+- **Every** commit between the deployed one and the new tip must verify, not
+  just the tip. A foreign commit stays refused even after a signed one lands on
+  top of it — say, after you pulled it down without noticing.
+- A first clone is verified at its tip before it becomes the checkout.
+- A rewritten history (a force-push) is refused outright.
+- On any refusal the run aborts, `update.log` names the commit and the reason
+  (`is not signed`, `is signed by a key that is not in …`), and the site keeps
+  serving the last build that passed. A run with nothing new to deploy still
+  refreshes the market data and rebuilds as usual.
+
+**One-time setup on the machine you commit from.** A dedicated SSH key just for
+signing (a passphrase is optional; with one, git asks for it on each commit):
+
+```sh
+ssh-keygen -t ed25519 -C "WebSWR commit signing" -f ~/.ssh/webswr_signing
+cd /path/to/your/checkout
+git config gpg.format ssh
+git config user.signingkey ~/.ssh/webswr_signing
+git config commit.gpgsign true
+```
+
+Optionally, let git check your own signatures locally too:
+
+```sh
+printf 'you@example.com namespaces="git" %s\n' "$(cat ~/.ssh/webswr_signing.pub)" > ~/.ssh/allowed_signers
+git config gpg.ssh.allowedSignersFile ~/.ssh/allowed_signers
+git log --show-signature -1
+```
+
+**On the server**, as the deploy user, put the same line in the trust list.
+The key part is the contents of `webswr_signing.pub`; the email is only a label:
+
+```sh
+mkdir -p ~/.config/webswr && chmod 700 ~/.config/webswr
+printf '%s\n' 'you@example.com namespaces="git" ssh-ed25519 AAAA...' > ~/.config/webswr/allowed_signers
+chmod 644 ~/.config/webswr/allowed_signers
+```
+
+Deploying a repo someone else signs? List their public key instead of, or as
+well as, yours: one line per key.
+
+**Turning it on for an existing deployment.** In this order, so nothing is
+refused by surprise:
+
+1. Set up signing as above, and make sure your next commit is signed
+   (`git log --show-signature -1`).
+2. Push it. The update script already installed on the server has no gate yet,
+   so the nightly run deploys it as usual.
+3. On the server, create the trust list, then re-run `./deploy/install.sh` from
+   the updated checkout to install the new update script.
+4. Run the updater once by hand and look for a `signed-commit gate:` line in
+   `update.log`.
+
+**Deploying a commit you didn't sign on purpose** (a GitHub web edit, a merged
+pull request): inspect it, then move the checkout past it by hand. Later runs
+only verify commits after that point.
+
+```sh
+cd ~/webswr/Trimor && git fetch && git log -p HEAD..@{u}   # read what you are accepting
+git merge --ff-only <commit>
+```
 
 ## The tunnel token
 

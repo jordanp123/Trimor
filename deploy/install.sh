@@ -155,7 +155,10 @@ if [ -n "$USERNS_SIZE" ] && [ -r /etc/subuid ]; then
   [ "$HAVE" -ge "$NEED" ] || echo "** warning: /etc/subuid gives $(id -un) $HAVE subuids but UserNS=auto needs $NEED ($USERNS_SIZE x $(ls "$SCRIPT_DIR"/quadlet/*.container | wc -l) containers) — widen it, then: podman system migrate && systemctl --user daemon-reload"
 fi
 [ -d "$BASE_DIR/$CHECKOUT_DIR/.git" ] || echo "** warning: no git checkout at $BASE_DIR/$CHECKOUT_DIR — the updater will clone it on its first run"
-[ -f "$BASE_DIR/Dockerfile" ] || echo "** note: webroot not assembled yet — run the updater (step 3 below) before starting the services"
+[ -f "$BASE_DIR/Dockerfile" ] || echo "** note: webroot not assembled yet — run the updater (step 4 below) before starting the services"
+# Same path the updater checks (the signed-commit gate in bin/webswr-update.sh).
+[ -f "$HOME/.config/webswr/allowed_signers" ] ||
+  echo "** note: no trusted-signer list at $HOME/.config/webswr/allowed_signers yet — the updater refuses to deploy until it exists (step 3 below)"
 case "$BASE_DIR" in *[[:space:]]*)
   echo "** warning: the path contains whitespace; systemd/Quadlet handling of that is fragile — a webroot at ~/webswr avoids it" ;;
 esac
@@ -262,11 +265,17 @@ Next steps (rootless, run as this user):
   2. Let the services run without an active login session:
        loginctl enable-linger "\$USER"
 
-  3. Assemble the webroot, fetch data, build and start everything:
+  3. List the key(s) allowed to deploy. The updater refuses any commit that is
+     not signed by one of them (see "Signed commits" in deploy/README.md):
+       mkdir -p ~/.config/webswr && chmod 700 ~/.config/webswr
+       printf '%s\\n' 'you@example.com namespaces="git" ssh-ed25519 AAAA...' \\
+         > ~/.config/webswr/allowed_signers
+
+  4. Assemble the webroot, fetch data, build and start everything:
        systemctl --user start webswr-update.service
        journalctl --user -u webswr-update -f
 
-  4. Turn on the daily refresh (05:00 + up to 15m jitter):
+  5. Turn on the daily refresh (05:00 + up to 15m jitter):
        systemctl --user enable --now webswr-update.timer
 
   Check:  systemctl --user status webswr-website webswr-cloudflared

@@ -53,7 +53,8 @@ There is **no build step** — the scripts are plain classic `<script>` files.
 
 The repo ships the production deployment two equivalent ways — a hardened
 `nginxinc/nginx-unprivileged` container behind a `cloudflared` tunnel, refreshed
-daily (git pull → regenerate market/CAPE data → rebuild → restart):
+daily (fetch → verify every new commit is signed by a key you listed → regenerate
+market/CAPE data → rebuild → restart):
 
 - **[`deploy/`](deploy/) — rootless Podman + systemd Quadlets.** What this
   project's own server runs: no root-owned daemon, the daily job runs
@@ -75,10 +76,13 @@ path) lives in **one file**:
 3. Create `.env` with your tunnel secret: `TUNNEL_TOKEN=...` (`chmod 600 .env`) —
    make the tunnel in the Cloudflare Zero Trust dashboard and route your
    hostname/path to `http://<STACK_NAME>:8080`
-4. `curl -fsSLO https://raw.githubusercontent.com/jordanp123/Trimor/main/update.sh`
+4. List the key(s) allowed to deploy in `/root/.config/webswr/allowed_signers` —
+   `update.sh` refuses any commit not signed by one of them (see
+   [Signed commits](deploy/README.md#signed-commits-the-deploy-gate))
+5. `curl -fsSLO https://raw.githubusercontent.com/jordanp123/Trimor/main/update.sh`
    (or your fork) and run `bash update.sh` — it clones, fetches fresh data,
    builds and starts everything
-5. Root crontab for the daily refresh: `0 5 * * * cd /root/webswr/Trimor && bash update.sh`
+6. Root crontab for the daily refresh: `0 5 * * * cd /root/webswr/Trimor && bash update.sh`
 
 `config.webswr` is gitignored and sits in the webroot next to `.env`, so the
 nightly update can never overwrite your settings. It contains no secrets.
@@ -101,7 +105,9 @@ Three suites run: the engine + Monte Carlo math (validated against known results
 like the 4% rule ≈ 95–96% and SAFEMAX ≈ 3.8%), a UI smoke/integration test that
 drives the real form-to-render path through a tiny DOM shim, and a **security
 suite** that loads the app with a hostile share-link and asserts the input bounds
-hold (see `SECURITY.md`).
+hold (see `SECURITY.md`). Alongside them, Python checks keep the Docker and
+Podman deployments in step, and a deploy-gate test runs the update scripts'
+signature check against real signed, unsigned and foreign-signed commits.
 
 ## How the data is built
 

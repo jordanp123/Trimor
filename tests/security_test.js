@@ -35,6 +35,8 @@ A(adjNote === "", "non-string note from the hash dropped (got '" + adjNote + "')
   // Partner age is clamped where it is read, even with no run.
   var age = Math.max(18, Math.min(110, Math.round(+document.getElementById("partnerAge").value || 65)));
   A(age === 110, "a 1e308 partner age clamps to 110 at the point of use");
+  A(document.getElementById("longevity").value === "2",
+    "a hostile longevity value ('__proto__') falls back to the default 2-year setback, never the raw table");
 })();
 
 // A share-link seed must override init()'s load-time randomization (the random
