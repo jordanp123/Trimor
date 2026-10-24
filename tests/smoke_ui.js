@@ -274,6 +274,179 @@ A(document.getElementById("strategy").value === "percent", "guardrail solve kept
   fire(document.getElementById("inputs"), "submit");
 })();
 
+// The worst start year of the run currently on screen, read the way a user
+// would see it: from the picker's own "Worst case — YYYY" option.
+function state_worst() {
+  var o = document.getElementById("ybyStart").children[0].children[0];
+  return +String(o.textContent).replace(/\D+/g, " ").trim().split(" ").pop();
+}
+
+// ===== 1-4: income tax, Social Security cut, partner, year-by-year =====
+// Each feature's DEFAULT must be the conservative one: when we don't know, assume
+// the outcome that can only make a plan look worse.
+(function () {
+  var g = function (id) { return document.getElementById(id); };
+  function submit() { fire(g("inputs"), "submit"); }
+  function hl() { return g("successBig").textContent; }
+  g("strategy").value = "constant"; fire(g("strategy"), "change");
+  g("initialSpend").value = "70000"; g("taxRate").value = "20"; g("years").value = "30";
+
+  // --- 1) income source + tax ---
+  g("addIncome") && fire(g("addIncome"), "click");
+  var rows = g("incomeRows").querySelectorAll(".flowrow");
+  var row = rows[rows.length - 1];
+  var src = row.querySelector(".f-src");
+  A(src && src.value === "ss", "a new income row defaults to Soc. Sec. (taxed and cut): the conservative source");
+  row.querySelector(".f-amt").value = "30000";
+  g("ssCutOn").checked = false; fire(g("ssCutOn"), "change");
+  src.value = "taxfree"; submit(); var free = parseFloat(hl());
+  src.value = "pension"; submit(); var taxedPension = parseFloat(hl());
+  A(taxedPension < free, "a taxed pension scores lower than the same amount tax-free (" +
+    free + "% -> " + taxedPension + "%)");
+
+  // old share links carry no source: they must read as Soc. Sec.
+  var slim = decodeURIComponent(history._last.slice(1));
+  A(/"inc":\[\[30000,1,30,1,"",1\]\]/.test(slim), "the share link records the row's source (" +
+    (slim.match(/"inc":\[\[[^\]]*\]\]/) || ["?"])[0] + ")");
+
+  // --- 2) the Social Security cut ---
+  src.value = "ss";
+  g("ssCutOn").checked = false; fire(g("ssCutOn"), "change"); submit(); var noCut = parseFloat(hl());
+  A(g("ssCutFields").hidden === true && g("ssCutHint").textContent.indexOf("optimistic") >= 0,
+    "with the cut off, its fields hide and the hint calls that the optimistic choice");
+  g("ssCutOn").checked = true; fire(g("ssCutOn"), "change"); submit(); var withCut = parseFloat(hl());
+  A(g("ssCutOn").checked && withCut <= noCut, "the Social Security cut can only lower results (" +
+    noCut + "% -> " + withCut + "%)");
+  A(/retirement year \d+, since it starts in 20\d\d/.test(g("ssCutHint").textContent),
+    "the hint states exactly which retirement year the cut lands in (" +
+    (g("ssCutHint").textContent.match(/retirement year \d+[^—]*/) || ["?"])[0] + ")");
+  A(/"planYear":"?20\d\d/.test(decodeURIComponent(history._last.slice(1))),
+    "the share link carries the plan's start year, so a link opened later reproduces it");
+  // A start year in the past lands the cut LATER in retirement than a plan
+  // starting now would -- the optimistic direction -- so it must be flagged.
+  var thisYear = new Date().getFullYear();
+  g("planYear").value = String(thisYear - 3); fire(g("planYear"), "input");
+  A(g("ssCutHint").textContent.indexOf("before this year") >= 0 &&
+    g("ssCutHint").textContent.indexOf("the optimistic direction") >= 0,
+    "a past start year is flagged in the hint as the optimistic direction");
+  submit(); var stale = parseFloat(hl());
+  g("planYear").value = String(thisYear); fire(g("planYear"), "input"); submit(); var fresh = parseFloat(hl());
+  A(fresh <= stale, "moving the start year to today brings the cut earlier, never raising success (" +
+    stale + "% -> " + fresh + "%)");
+  A(g("ssCutHint").textContent.indexOf("before this year") < 0, "...and the warning clears");
+  g("ssCutPct").value = "150"; submit();
+  A(g("formMsg").textContent.indexOf("between 0% and 100%") >= 0, "an impossible benefit share refuses the run");
+  g("ssCutPct").value = "78"; submit();
+
+  // --- 3) partner ---
+  g("partnerOn").checked = false; fire(g("partnerOn"), "change"); submit();
+  A(g("rbdTitle").textContent === "Will your money outlast you?", "single-person title by default");
+  A(g("rbdSub").textContent.indexOf("likely optimistic") >= 0 && g("rbdSub").textContent.indexOf("likely conservative") < 0,
+    "the life-table caption says it errs OPTIMISTIC (it used to claim the opposite)");
+  var singleDead = parseFloat((g("rbdSub").textContent.match(/(\d+)% chance deceased/) || [0, "NaN"])[1]);
+  g("partnerOn").checked = true; fire(g("partnerOn"), "change"); submit();
+  A(g("partnerFields").hidden === false && g("rbdTitle").textContent === "Will your money outlast you both?",
+    "with a partner, the fields show and the chart asks about both of you");
+  var bothDead = parseFloat((g("rbdSub").textContent.match(/(\d+)% chance you've both died/) || [0, "NaN"])[1]);
+  A(bothDead < singleDead, "a couple is less likely to have BOTH died by the end, so the money must last longer (" +
+    singleDead + "% -> " + bothDead + "%)");
+  g("partnerOn").checked = false; fire(g("partnerOn"), "change");
+
+  // --- 4) year by year + CSV ---
+  submit();
+  var hist = SWR.ui.__yby();
+  A(g("ybyCard").hidden === false && hist && hist.rows.length > 0, "the year-by-year card shows after a run");
+  A(g("ybyStart").value === "worst" && hist.startYear === state_worst(),
+    "it opens on the CURRENT plan's worst case (" + hist.startYear + ")");
+  // Change the plan so its worst case moves: the default must follow it, or the
+  // table would show a milder scenario than the real worst (seen in a browser).
+  var before = hist.startYear;
+  g("initialSpend").value = "95000"; submit();
+  var moved = SWR.ui.__yby().startYear;
+  A(g("ybyStart").value === "worst" && moved === state_worst(),
+    "after an edit the table still shows the worst case of the NEW plan (" + before + " -> " + moved + ")");
+  // A year the reader deliberately picks is kept across runs.
+  g("ybyStart").value = "1929"; fire(g("ybyStart"), "change");
+  submit();
+  A(SWR.ui.__yby().startYear === 1929, "a year the reader chose is kept across a re-run");
+  g("ybyStart").value = "worst"; fire(g("ybyStart"), "change");
+  g("initialSpend").value = "70000"; submit();
+  hist = SWR.ui.__yby();
+  var csv = SWR.ui.__ybyCsvText(hist, 65), lines = csv.trim().split("\r\n");
+  A(lines.length === hist.rows.length + 1 && lines[0].indexOf("year,market_year,age") === 0,
+    "the CSV has a header and one line per year (" + (lines.length - 1) + " rows)");
+  A(lines[0].indexOf("end_nominal") >= 0 && lines[0].indexOf("end_real") >= 0,
+    "the CSV carries both nominal and today's-dollar columns");
+  var evil = SWR.ui.__ybyCsvText({ startYear: 1966, years: 1, rows: [{ year: 1, start: 1, spend: 1, income: 1,
+    expense: 1, incomeTax: 0, withdrawalTax: 0, withdrawal: -5, fee: 0, bucket: 0, end: 1, ret: 0, infl: 0,
+    deflStart: 1, deflEnd: 1, ranOut: "=HYPERLINK(\"http://x\")" }] }, 65);
+  // No field carries free text into the CSV today: even a hostile value in the
+  // one text column is replaced by a fixed yes/no. That is the real guarantee.
+  A(evil.indexOf("HYPERLINK") < 0, "no field passes free text into the CSV (a planted formula never appears)");
+  A(evil.indexOf(",-5,") >= 0, "...and a negative NUMBER stays a number, not text");
+  // Defence in depth for any future text column: the sanitiser itself.
+  var c = SWR.ui.__csvCell;
+  A(c("=SUM(A1)") === "'=SUM(A1)" && c("+1") === "'+1" && c("@x") === "'@x" && c("-cmd") === "'-cmd",
+    "text a spreadsheet would run as a formula is defused with a leading apostrophe");
+  A(c(-5) === "-5" && c(1234.567) === "1234.57", "numbers are written as numbers, rounded to cents");
+  A(c('a,"b"') === '"a,""b"""', "commas and quotes are escaped");
+  g("taxRate").value = "0"; g("initialSpend").value = "40000";
+  clearAllRows: { var r2 = g("incomeRows").querySelectorAll(".flowrow"); for (var k = 0; k < r2.length; k++) r2[k].remove(); }
+  submit();
+})();
+
+// Guyton cuts spending like the other adaptive strategies, so its pay cut must
+// be on screen too, never just a success rate that can rise as plans worsen.
+(function () {
+  var g = function (id) { return document.getElementById(id); };
+  g("strategy").value = "guyton"; fire(g("strategy"), "change");
+  g("initialSpend").value = "75000"; g("years").value = "30";
+  fire(g("inputs"), "submit");
+  var lbl = g("successLabel").textContent, stats = textOf(g("headStats"));
+  A(/fell to \d+% of year one|never fell below/.test(lbl) || stats.indexOf("% of yr 1") >= 0,
+    "a Guyton plan shows how far spending fell, not only a success rate (" + lbl.slice(0, 80) + ")");
+  A(lbl.indexOf("Your spending floor") < 0,
+    "...and never blames a spending floor, which Guyton does not have");
+  g("strategy").value = "constant"; fire(g("strategy"), "change");
+  g("initialSpend").value = "40000"; fire(g("inputs"), "submit");
+})();
+
+// Review findings, pinned.
+(function () {
+  var g = function (id) { return document.getElementById(id); };
+  function submit() { fire(g("inputs"), "submit"); }
+  // #2: Guyton can run dry, so it must never take the headline that says a plan
+  // "cuts your income rather than running dry" -- even with zero failures.
+  g("strategy").value = "guyton"; fire(g("strategy"), "change");
+  g("initialSpend").value = "45000"; g("years").value = "30"; submit();
+  A(g("successKind").textContent === "Success rate" && g("successLabel").textContent.indexOf("rather than running dry") < 0,
+    "a Guyton plan with no failures keeps the success-rate headline and never claims it can't run dry");
+  // #3: rates keep their precision in the CSV
+  var c = SWR.ui.__csvCell;
+  A(c(0.0349, 6) === "0.0349" && c(0.004, 6) === "0.004" && c(1234.567) === "1234.57",
+    "CSV rates keep 6 decimals while money rounds to cents");
+  var tr = SWR.ui.__yby(), csv = SWR.ui.__ybyCsvText(tr, 65).trim().split("\r\n");
+  var head = csv[0].split(","), ri = head.indexOf("return"), r1 = csv[1].split(",")[ri];
+  A(Math.abs(+r1 - tr.rows[0].ret) < 1e-6, "the exported return matches the engine's to 6 decimals (" + r1 + ")");
+  // #5: adjustment Income is taxed; Tax-free is explicit
+  g("strategy").value = "constant"; fire(g("strategy"), "change");
+  g("initialSpend").value = "70000"; g("taxRate").value = "20";
+  var rs = g("adjustRows").querySelectorAll(".flowrow");
+  for (var k = 0; k < rs.length; k++) rs[k].remove();
+  fire(g("addAdjust"), "click");
+  var row = g("adjustRows").querySelector(".flowrow");
+  row.querySelector(".f-amt").value = "30000"; row.querySelector(".f-end").value = "10";
+  A(row.querySelector(".f-kind").value === "expense", "a new adjustment row still starts as Expense");
+  row.querySelector(".f-kind").value = "taxfree"; submit(); var free = parseFloat(g("successBig").textContent);
+  row.querySelector(".f-kind").value = "income"; submit(); var taxed = parseFloat(g("successBig").textContent);
+  A(taxed < free, "adjustment Income is taxed, Tax-free is not (" + free + "% -> " + taxed + "%)");
+  var slim = decodeURIComponent(history._last.slice(1));
+  A(/"adj":\[\[1,30000/.test(slim), "the link records taxed Income as code 1");
+  row.querySelector(".f-kind").value = "taxfree"; submit();
+  A(/"adj":\[\[2,30000/.test(decodeURIComponent(history._last.slice(1))), "...and Tax-free as code 2");
+  row.remove(); g("taxRate").value = "0"; g("initialSpend").value = "40000"; submit();
+})();
+
 // Adjustments must say only what actually reached the results. The dangerous
 // case is a PESSIMISTIC haircut on an asset the portfolio doesn't hold: if the
 // note announced it as applied, the user would believe they had stress-tested

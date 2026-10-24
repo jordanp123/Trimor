@@ -18,6 +18,7 @@
     "strategy", "initialSpend", "spendPercent", "withdrawFreqVal", "vpwReturn", "capeA", "capeB", "gkGuard", "gkAdjust",
     "spendFloor", "spendCeiling", "inflationMode", "fixedInflation", "taxRate",
     "adjStocks", "adjBonds", "adjGold", "adjCash", "adjCorp", "adjReit", "adjSmallcap",
+    "ssCutOn", "ssCutPct", "ssCutYear", "planYear", "partnerOn", "partnerAge", "partnerSex",
     "runMonteCarlo", "mcMethod", "mcTrials", "mcBlock", "mcBlockMin", "mcBlockMax", "mcSeed", "targetSuccess",
     "gsolveTarget",
   ];
@@ -38,6 +39,17 @@
     allocCorp: "corp", allocReit: "reit", allocSmallcap: "smallcap",
   };
 
+  // The calendar year retirement starts is the only thing that maps the Social
+  // Security cut (a calendar year) onto retirement years. It is a visible,
+  // editable field (#planYear): defaulted to this year, carried in share links
+  // so a link reproduces its plan, and flagged in the hint when it is earlier
+  // than this year -- a stale start year lands the cut LATER than it should,
+  // which is the optimistic direction, so it must never pass silently.
+  const THIS_YEAR = new Date().getFullYear();
+  const planYear = () => {
+    const y = Math.round(num("planYear", THIS_YEAR));
+    return Number.isInteger(y) && y >= 2000 && y <= 2200 ? y : THIS_YEAR;
+  };
   const state = { historical: null, montecarlo: null, mode: "historical", dollar: "real", solveBasis: "historical", gsolveBasis: "historical", params: null, data: null, view: "main", loan: null, loanDone: false, compound: null, compoundDone: false, compTiming: "start" };
   let worker = null, workerOK = true, solvePending = null;
   let solving = false, solveTimer = null, solveFallback = null;
@@ -134,7 +146,19 @@
       const note = noteEl ? String(noteEl.value).slice(0, MAX_NOTE) : "";
       // Bounded like the portfolio itself: a hash-planted 1e308 income would
       // otherwise compound the balance to Infinity and render as "$InfinityB".
-      out.push({ amount: Math.min(Math.abs(amt), MAX_PORTFOLIO), start, end, cola, kind, note });
+      // The engine knows only income/expense; tax-free income is income with
+      // taxed:false, and plain adjustment Income is taxed.
+      const row1 = { amount: Math.min(Math.abs(amt), MAX_PORTFOLIO), start, end, cola,
+        kind: kind === "taxfree" ? "income" : kind, note };
+      if (!fixedKind && kind !== "expense") { row1.taxed = kind === "income"; row1.adjKind = kind; }
+      const srcSel = row.querySelector(".f-src");
+      if (srcSel) {
+        const src = INCOME_SOURCES.indexOf(srcSel.value) >= 0 ? srcSel.value : "ss";
+        row1.src = src;
+        row1.ss = src === "ss";
+        row1.taxed = src !== "taxfree";
+      }
+      out.push(row1);
     });
     return out;
   }
@@ -185,6 +209,14 @@
       taxRate: clampNum("taxRate", 0, 0, 90) / 100,
       spending: sp,
       incomes: readFlows("incomeRows", "income"),
+      // Current law's automatic cut to the payable share once the retirement
+      // trust fund is exhausted, mapped from a calendar year onto retirement
+      // years via the plan's start year (a cut already in the past applies
+      // from year 1).
+      ssCut: $("ssCutOn").checked ? {
+        fromYear: Math.max(1, Math.round(num("ssCutYear", 2032)) - planYear() + 1),
+        factor: clampNum("ssCutPct", 78, 0, 100) / 100,
+      } : null,
       adjustments: readFlows("adjustRows", null),
     };
   }
@@ -242,6 +274,13 @@
         return "Streak lengths must be between 1 and " + MAX_STREAK + " years.";
       if (lo > hi)
         return "Shortest streak (" + lo + " yrs) is longer than the longest (" + hi + " yrs) — swap them.";
+    }
+    if ($("ssCutOn").checked) {
+      const pct = parseFloat(stripNum($("ssCutPct").value)), yr = parseFloat(stripNum($("ssCutYear").value));
+      if (!(pct >= 0 && pct <= 100)) return "Social Security benefits paid must be between 0% and 100% of scheduled.";
+      if (!(Number.isInteger(yr) && yr >= 2000 && yr <= 2200)) return "The Social Security cut year must be a year between 2000 and 2200.";
+      const py = parseFloat(stripNum($("planYear").value));
+      if (!(Number.isInteger(py) && py >= 2000 && py <= 2200)) return "Retirement start must be a year between 2000 and 2200.";
     }
     // Return adjustments: refuse out-of-range rather than clamping silently,
     // so the run always matches what is on screen.
@@ -327,18 +366,38 @@
   }
 
   // ---------- dynamic income / adjustment rows ----------
+  // Income row sources, in share-link code order (0, 1, 2). Never reorder:
+  // links already in the wild store the index.
+  const INCOME_SOURCES = ["ss", "pension", "taxfree"];
+
   function addFlowRow(container, kindSelectable, v) {
     v = v || {};
     const row = el("div", { class: "flowrow" });
     let first;
     if (kindSelectable) {
-      first = el("select", { class: "f-kind" }, [
+      // Income here is TAXED unless marked Tax-free. It used to be untaxed
+      // regardless, while this section's own hint suggested "part-time work" --
+      // taxable income, silently treated as tax-free, overstating success.
+      // Tax-free stays one click away for the case that genuinely is (an
+      // inheritance), and a new row still starts as Expense, so taxed income is
+      // only ever chosen deliberately.
+      first = el("select", { class: "f-kind", title: "Income is taxed at your effective rate · Tax-free: an inheritance, a gift, or an amount already after tax" }, [
         el("option", { value: "expense", text: "Expense" }),
         el("option", { value: "income", text: "Income" }),
+        el("option", { value: "taxfree", text: "Tax-free" }),
       ]);
-      first.value = v.kind === "income" ? "income" : "expense";
+      first.value = ["income", "taxfree"].indexOf(v.kind) >= 0 ? v.kind : "expense";
     } else {
-      first = el("span", { class: "rowlabel", text: "Inflow" });
+      // Source sets the tax treatment and whether the Social Security cut
+      // applies. It replaces the old static "Inflow" label in the same column,
+      // so the row gets no wider. Unknown or missing => Soc. Sec.: the
+      // conservative default (taxed AND subject to the cut).
+      first = el("select", { class: "f-src", title: "Soc. Sec.: taxed, and cut if the Social Security cut is on · Pension: taxed · Tax-free: Roth income or an amount already after tax" }, [
+        el("option", { value: "ss", text: "Soc. Sec." }),
+        el("option", { value: "pension", text: "Pension" }),
+        el("option", { value: "taxfree", text: "Tax-free" }),
+      ]);
+      first.value = INCOME_SOURCES.indexOf(v.src) >= 0 ? v.src : "ss";
     }
     const amt = el("input", { class: "f-amt", type: "text", inputmode: "numeric", autocomplete: "off", placeholder: "$ / yr" });
     if (v.amount != null) amt.value = v.amount;
@@ -416,6 +475,30 @@
       (st === "constant" || st === "guyton") && iv > 0 ? "Initial rate: " + (s / iv * 100).toFixed(2) + "% of portfolio" : "";
     updateCapeHint();
   }
+  // The Social Security cut block: fields only while it's on, and a hint that
+  // states the exact retirement year the cut lands in for THIS plan, so the
+  // calendar-year input never hides an assumption.
+  function syncSsCut() {
+    const on = $("ssCutOn").checked;
+    $("ssCutFields").hidden = !on;
+    if (!on) {
+      $("ssCutHint").textContent = "Social Security rows are paid in full every year. Current law " +
+        "cuts them once the retirement trust fund runs out (projected late 2032, then 78% of " +
+        "scheduled benefits), so this is the optimistic choice — keep it only if you are confident " +
+        "Congress will close the gap.";
+      return;
+    }
+    const pct = Math.round(num("ssCutPct", 78)), yr = Math.round(num("ssCutYear", 2032));
+    const py = planYear(), ry = Math.max(1, yr - py + 1);
+    $("ssCutHint").textContent = "Current law: the 2026 Social Security Trustees Report projects the " +
+      "retirement trust fund running out in late 2032, after which benefits fall to the 78% that " +
+      "payroll taxes can fund. This plan pays " + pct + "% from " + yr + " — retirement year " + ry +
+      ", since it starts in " + py + " — on every Soc. Sec. row, including benefits claimed later." +
+      (py < THIS_YEAR ? " Note: " + py + " is before this year, so the cut lands later in your retirement " +
+        "than it would for a plan starting now — the optimistic direction. Change it to " + THIS_YEAR +
+        " to plan from today." : "");
+  }
+
   // Reflect the persisted withdrawFreqVal into the segmented buttons + hint (the
   // hidden input is the single source of truth so it round-trips in the hash).
   function syncFreq() {
@@ -457,6 +540,7 @@
     state.historical = SWR.core.runHistorical(params, data);
     enableMcTab(false);
     setMode("historical");
+    ybyPopulate(state.historical);
     let deferredMc = false;
     state.mcStarted = false;
     if ($("runMonteCarlo").checked) {
@@ -470,6 +554,8 @@
     // unadjusted figures, omit the label from adjusted ones, or even print
     // an out-of-range value validate() had just refused.
     state.adj = adjParts();
+    state.runAge = Math.round(num("currentAge", 65)); // the table's Age column follows THIS run
+    state.runPlanYear = planYear();                    // and the report's start year
     renderAdjNote();
     renderTrialsCap();
     updateHash();
@@ -763,6 +849,7 @@
     state.mode = mode;
     $("trajMode").querySelectorAll("button").forEach((b) => b.classList.toggle("seg-on", b.dataset.mode === mode));
     render(mode === "montecarlo" ? state.montecarlo : state.historical);
+    ybyRender(); // its note names which view the charts are showing
   }
   function enableMcTab(on) {
     $("trajMode").querySelector('[data-mode="montecarlo"]').disabled = !on;
@@ -775,6 +862,17 @@
   }
   function block(title, rows) { return el("div", { class: "detail-block" }, [el("h4", { text: title })].concat(rows)); }
   function noteBlock(title, text) { return el("div", { class: "detail-block" }, [el("h4", { text: title }), el("p", { class: "muted small", text: text })]); }
+
+  // Strategies whose spending moves with the market, so a success rate alone
+  // can hide a pay cut: they always show how far spending fell. One list, used
+  // by the headline and the report.
+  const VARIABLE_SPENDING = ["percent", "vpw", "cape", "guyton"];
+  // The subset that, without a spending floor, CANNOT run dry: each spends a
+  // share of what it still holds. Only these may take the income headline that
+  // says the plan "cuts your income rather than running dry". Guyton is NOT
+  // here -- it has no such guarantee and fails outright in bad sequences
+  // (measured: $80k on $1M ran out in 52 of 126 cycles).
+  const SELF_LIMITING = ["percent", "vpw", "cape"];
 
   // Strategies whose yearly draw is a function of the PLAN LENGTH, not just of
   // the balance: VPW amortizes over the years remaining, and Guyton suspends
@@ -803,6 +901,156 @@
       "year, so a start year that ran dry under a shorter plan can still be solvent " +
       "when the data runs out — unknown rather than failed, and left out of the rate. " +
       "Measured effect: under 2 percentage points. Compare plans at one length.";
+  }
+
+  // ---------- year by year ----------
+  // One historical retirement in full, from core.traceHistorical: the same
+  // inputs and the same simulateCycle as the backtest, so every row agrees with
+  // the charts beside it to the cent. Opens on the WORST case -- the scenario a
+  // plan most needs to survive is the one shown first.
+  const YBY_HEAD = ["Yr", "Market yr", "Age", "Start", "Spending", "Income", "Expenses",
+    "Tax", "Withdrawal", "Fees", "Return", "Inflation", "End"];
+  const YBY_ROLES = ["worst", "median", "best"];
+  const pct1 = (x) => (x * 100).toFixed(1) + "%";
+  // Signed money: a negative withdrawal means income beat spending and the
+  // surplus went back into the portfolio.
+  const fmtSigned = (x) => (x < -0.5 ? "−" : "") + fmtExact(Math.abs(x));
+
+  function ybyPopulate(s) {
+    const card = $("ybyCard"), sel = $("ybyStart");
+    if (!s || s.mode !== "historical" || s.insufficient || !s.representative || !s.startYears) {
+      card.hidden = true; state.yby = null; return;
+    }
+    card.hidden = false;
+    const prev = sel.value;
+    const r = s.representative, yrs = state.data.years;
+    const first = SWR.core.firstStartYear(state.params, state.data), last = yrs[yrs.length - 1];
+    const ranOut = {};
+    s.sampleSeries.forEach((c) => { if (!c.success) ranOut[c.startYear] = true; });
+    const rep = el("optgroup", { label: "Representative" }, [
+      // ROLE values, not years: a role re-resolves against every new run, so the
+      // default "Worst case" always shows the CURRENT plan's worst. Storing the
+      // year instead kept the previous plan's worst after an edit -- seen in a
+      // browser: the table stayed on 1966 (ran out in year 15) while the edited
+      // plan's real worst was 1973 (year 13), i.e. it understated the worst case.
+      el("option", { value: "worst", text: "Worst case — " + r.worst.startYear }),
+      el("option", { value: "median", text: "Median case — " + r.median.startYear }),
+      el("option", { value: "best", text: "Best case — " + r.best.startYear }),
+    ]);
+    const every = el("optgroup", { label: "Every start year" });
+    for (let y = first; y <= last; y++) {
+      // "partial": history ends before this start year's plan does.
+      const tag = ranOut[y] ? " (ran out)" : y > s.startYears.last ? " (partial)" : "";
+      every.appendChild(el("option", { value: String(y), text: y + tag }));
+    }
+    sel.replaceChildren(rep, every);
+    // A role stays a role (and so follows the new run); a year the reader chose
+    // from the full list is kept while it still exists; otherwise the worst case.
+    const yr = +prev;
+    sel.value = YBY_ROLES.indexOf(prev) >= 0 ? prev
+      : Number.isInteger(yr) && yr >= first && yr <= last ? String(yr) : "worst";
+    ybyRender();
+  }
+
+  function ybyRender() {
+    const wrap = $("ybyWrap"), note = $("ybyNote");
+    if (!state.params || !state.data || $("ybyCard").hidden) return;
+    const v = $("ybyStart").value, rep = state.historical && state.historical.representative;
+    const sy = YBY_ROLES.indexOf(v) >= 0 && rep ? rep[v].startYear : +v;
+    const tr = SWR.core.traceHistorical(state.params, state.data, sy);
+    state.yby = tr;
+    if (!tr || !tr.rows.length) { wrap.replaceChildren(); note.textContent = ""; return; }
+    const real = state.dollar === "real";
+    const age0 = state.runAge != null ? state.runAge : Math.round(num("currentAge", 65));
+    let surplus = false;
+    const body = tr.rows.map((row) => {
+      const dS = real ? row.deflStart : 1, dE = real ? row.deflEnd : 1;
+      if (row.withdrawal < -0.5) surplus = true;
+      const cells = [
+        String(row.year), String(tr.startYear + row.year - 1), String(age0 + row.year - 1),
+        fmtExact(row.start / dS), fmtExact(row.spend / dS), fmtExact(row.income / dS),
+        fmtExact(row.expense / dS), fmtExact((row.incomeTax + row.withdrawalTax) / dS),
+        fmtSigned(row.withdrawal / dS), fmtExact(row.fee / dS), pct1(row.ret), pct1(row.infl),
+        row.ranOut ? "ran out" : fmtExact(row.end / dE),
+      ];
+      return el("tr", row.ranOut ? { class: "ran-out" } : {}, cells.map((c) => el("td", { text: c })));
+    });
+    const table = el("table", { class: "yby-table" }, [
+      el("thead", {}, [el("tr", {}, YBY_HEAD.map((h) => el("th", { text: h })))]),
+      el("tbody", {}, body),
+    ]);
+    wrap.replaceChildren(table);
+
+    const lastRow = tr.rows[tr.rows.length - 1], lastMarket = tr.startYear + lastRow.year - 1;
+    let t = (state.mode === "montecarlo"
+      ? "Historical backtest — the charts above are showing Monte Carlo, whose paths are synthetic and have no year-by-year history. "
+      : "") + (real ? "Today's dollars" : "Nominal dollars") +
+      ", following the Real/Nominal switch on the chart. Spending + Expenses + Tax = Income + Withdrawal in every year the portfolio covered in full. ";
+    if (lastRow.ranOut) {
+      const d = real ? lastRow.deflStart : 1;
+      t += "The money ran out in year " + lastRow.year + " of " + tr.years + " (" + lastMarket + "): " +
+        fmtExact((lastRow.shortfall + lastRow.start) / d) + " was needed and " + fmtExact(lastRow.start / d) + " was left.";
+    } else if (!tr.complete) {
+      t += "History ends after " + tr.observedYears + " of " + tr.years + " years (" + lastMarket +
+        ") with money still left, so this start year's outcome is unknown and it is not counted in the success rate.";
+    } else {
+      t += lastRow.depleted
+        ? "The money lasted all " + tr.years + " years: the last of it was spent in year " + lastRow.year +
+          ", which completes the plan rather than failing it."
+        : "The money lasted all " + tr.years + " years.";
+    }
+    if (surplus) t += " A negative withdrawal means income exceeded spending and the surplus was reinvested.";
+    note.textContent = t;
+  }
+
+  // The CSV text for a trace: every money column in BOTH nominal and today's
+  // dollars, plus the components the table folds together. Pure, so it can be
+  // tested without a download. Numbers stay numbers; any text cell that a
+  // spreadsheet could read as a formula (=, +, -, @, tab, CR) is defused with a
+  // leading apostrophe -- there is no user text in here today, but a future
+  // column must not be able to turn this into a formula-injection vector.
+  // dp: decimal places for numbers -- 2 (cents) for money, more for the return
+  // and inflation columns, which are fractions: rounding those to cents wrote a
+  // 3.49% return as 0.03 and a 0.4% inflation year as 0.
+  function csvCell(v, dp) {
+    const k = Math.pow(10, dp == null ? 2 : dp);
+    if (typeof v === "number") return isFinite(v) ? String(Math.round(v * k) / k) : "";
+    let x = String(v);
+    if (/^[=+\-@\t\r]/.test(x)) x = "'" + x;
+    return /[",\r\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x;
+  }
+
+  function ybyCsvText(tr, age0) {
+    const cell = csvCell;
+    const money = ["start", "spend", "income", "expense", "incomeTax", "withdrawalTax", "withdrawal", "fee", "bucket"];
+    const head = ["year", "market_year", "age"]
+      .concat(money.map((k) => k + "_nominal"), ["end_nominal", "return", "inflation"],
+              money.map((k) => k + "_real"), ["end_real", "ran_out", "portfolio_used_up"]);
+    const lines = [head.map((h) => cell(h)).join(",")];
+    const rate = (x) => cell(x, 6);
+    tr.rows.forEach((r) => {
+      // ran_out = a failure (before the final year), as the engine counts it;
+      // portfolio_used_up also covers spending the last of it in the final year.
+      lines.push([cell(r.year), cell(tr.startYear + r.year - 1), cell(age0 + r.year - 1)]
+        .concat(money.map((k) => cell(r[k])), [cell(r.end), rate(r.ret), rate(r.infl)],
+                money.map((k) => cell(r[k] / r.deflStart)),
+                [cell(r.end / r.deflEnd), cell(r.ranOut ? "yes" : "no"), cell(r.depleted ? "yes" : "no")])
+        .join(","));
+    });
+    return lines.join("\r\n") + "\r\n";
+  }
+
+  function ybyDownload() {
+    const tr = state.yby;
+    if (!tr) return;
+    const age0 = state.runAge != null ? state.runAge : Math.round(num("currentAge", 65));
+    const blob = new Blob([ybyCsvText(tr, age0)], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = el("a", { href: url, download: "webswr-" + tr.startYear + "-start-" + tr.years + "yr.csv" });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
   // Which start years this result actually judged. Shared by the headline
@@ -854,8 +1102,15 @@
     // never a claim of impossibility -- and when cycles did fail, the success
     // rate takes back the headline because running dry outranks a pay cut.
     const floor = s.spending && s.spending.incomeFloor;
-    const variable = floor && ["percent", "vpw", "cape"].indexOf(s.spending.strategy) >= 0;
-    const selfLimiting = variable && s.failed === 0;
+    // Guyton belongs here too. Its guardrails cut spending to protect the
+    // portfolio, so with only a success rate on screen a WORSE plan can score
+    // higher: found in the audit, cutting Social Security on a 60-year Guyton
+    // plan raised success 94.8% -> 95.8% because the 1886 retiree was cut twice
+    // more, to a leanest year of $41k instead of $50k ($445k less over their
+    // life) and so never ran out. Showing the rough-case income beside the
+    // rate makes that trade visible instead of reading as an improvement.
+    const variable = floor && VARIABLE_SPENDING.indexOf(s.spending.strategy) >= 0;
+    const selfLimiting = variable && SELF_LIMITING.indexOf(s.spending.strategy) >= 0 && s.failed === 0;
     if (selfLimiting) {
       const keep = floor.p10;                       // rough-case: 10th-percentile cycle
       // Show DOLLARS, not a second percentage. The card's slot is where people
@@ -899,9 +1154,17 @@
         // A binding floor pins the draw at its year-one level, so the ratio is
         // 100% and "it fell to 100%" would be nonsense -- in that case the
         // constant draw IS the cause of ruin, which is the useful thing to say.
+        // Spending that never fell has two different causes: a floor pinning it
+        // (percent/VPW/CAPE), or guardrails that didn't cut (Guyton suspends
+        // its cuts in the final 15 years). Only name a floor when there is one.
         label += floor.p10 >= 0.995
-          ? ". Your spending floor held the draw at its year-one level while the portfolio shrank —"
-            + " that is what exhausted it."
+          ? (s.spending.hasFloor
+              ? ". Your spending floor held the draw at its year-one level while the portfolio shrank —"
+                + " that is what exhausted it."
+              : s.failed
+                ? ". In a rough case spending never fell below its year-one level, so the shortfall"
+                  + " shows up as failures rather than as cuts."
+                : ". In a rough case spending never fell below its year-one level.")
           : ". Spending is variable too: in a rough case it fell to "
             + Math.round(floor.p10 * 100) + "% of year one"
             + (s.spending.hasFloor ? " — and your floor is what forced the draw up into these failures." : ".");
@@ -1020,17 +1283,31 @@
     card.hidden = false;
     const age = Math.max(18, Math.min(110, Math.round(num("currentAge", 65))));
     const sex = $("sex").value;
-    const survival = SWR.mortality.survivalCurve(age, sex, s.years);
+    // For a couple the money must outlast the SECOND death, so "alive" means
+    // at least one of you. Using one life here understated how long a couple's
+    // money has to last (both 65: 51% chance one survives to 90, vs 24%).
+    const two = $("partnerOn").checked;
+    const pAge = Math.max(18, Math.min(110, Math.round(num("partnerAge", 65))));
+    const pSex = $("partnerSex").value;
+    const survival = two
+      ? SWR.mortality.jointSurvivalCurve(age, sex, pAge, pSex, s.years)
+      : SWR.mortality.survivalCurve(age, sex, s.years);
     SWR.charts.richBrokeDead($("rbdCanvas"), { years: s.years, survival, brokeByYear: s.brokeByYear, startAge: age });
-    const le = SWR.mortality.lifeExpectancy(age, sex);
+    const le = two ? SWR.mortality.jointLifeExpectancy(age, sex, pAge, pSex) : SWR.mortality.lifeExpectancy(age, sex);
     const deadByEnd = (1 - (survival[s.years] || 0)) * 100;
+    $("rbdTitle").textContent = two ? "Will your money outlast you both?" : "Will your money outlast you?";
     // Say which table this is and which way it errs. A PERIOD table freezes
     // today's age-specific death rates forever; real cohorts keep benefiting
     // from mortality improvement, so it overstates dying and therefore
-    // understates longevity risk -- the direction that flatters a plan.
-    $("rbdSub").textContent = "SSA period life table · life expectancy ≈ age " + Math.round(age + le) +
-      " · " + deadByEnd.toFixed(0) + "% chance deceased by year " + s.years +
-      " · likely conservative: period tables ignore future mortality improvement";
+    // understates longevity risk -- the direction that FLATTERS a plan. This
+    // caption used to call that "likely conservative", the opposite of the
+    // comment above it and of the Help text; it now says which way it errs.
+    $("rbdSub").textContent = "SSA period life table · " +
+      (two ? "second death expected around your age " + Math.round(age + le) +
+             " · " + deadByEnd.toFixed(0) + "% chance you've both died by year " + s.years
+           : "life expectancy ≈ age " + Math.round(age + le) +
+             " · " + deadByEnd.toFixed(0) + "% chance deceased by year " + s.years) +
+      " · likely optimistic: period tables ignore future gains in life expectancy, so you may live longer than shown";
   }
 
   function redrawCharts() {
@@ -1174,11 +1451,15 @@
       const v = persistVal(e); // stripNum: share-links carry plain digits, not display commas
       // mcSeed is ALWAYS serialized: its "default" is randomized per load, so
       // omitting it would re-roll the seed on open and change the MC results.
-      if (id !== "mcSeed" && v === DEFAULT_STATE[id]) return;
+      // planYear too: its default is "this year", so omitting it would re-date a
+      // shared plan to whatever year the link is opened in.
+      if (id !== "mcSeed" && id !== "planYear" && v === DEFAULT_STATE[id]) return;
       o[id] = v;
     });
-    const inc = readFlows("incomeRows", "income").map((f) => [f.amount, f.start, f.end, f.cola ? 1 : 0, f.note || ""]);
-    const adj = readFlows("adjustRows", null).map((f) => [f.kind === "income" ? 1 : 0, f.amount, f.start, f.end, f.cola ? 1 : 0, f.note || ""]);
+    const inc = readFlows("incomeRows", "income").map((f) =>
+      [f.amount, f.start, f.end, f.cola ? 1 : 0, f.note || "", Math.max(0, INCOME_SOURCES.indexOf(f.src))]);
+    const adj = readFlows("adjustRows", null).map((f) =>
+      [f.adjKind === "taxfree" ? 2 : f.kind === "income" ? 1 : 0, f.amount, f.start, f.end, f.cola ? 1 : 0, f.note || ""]);
     if (inc.length) o.inc = inc; // empty = fresh-load state; omit like defaults
     if (adj.length) o.adj = adj;
     return o;
@@ -1192,16 +1473,29 @@
       const e = $(id); if (!e) return;
       if (e.type === "checkbox") e.checked = !!(+o[id]); else e.value = String(o[id]);
     });
+    // Links made before #planYear existed carried it as `py`. A plausible
+    // integer year only; anything else leaves the field at this year.
+    const py = +o.py;
+    if (!("planYear" in o) && Number.isInteger(py) && py >= 2000 && py <= 2200) $("planYear").value = String(py);
     // Cap the row count so a hostile hash can't spawn a million DOM nodes.
     // Notes are optional trailing strings (older links lack them); anything
     // non-string from a crafted hash is dropped, and length is capped.
     const noteOf = (x) => (typeof x === "string" ? x.slice(0, MAX_NOTE) : "");
     clearRows("incomeRows");
     (Array.isArray(o.inc) ? o.inc.slice(0, MAX_FLOWS) : []).forEach((a) =>
-      addFlowRow($("incomeRows"), false, { amount: +a[0], start: +a[1], end: +a[2], cola: !!+a[3], kind: "income", note: noteOf(a[4]) }));
+      addFlowRow($("incomeRows"), false, { amount: +a[0], start: +a[1], end: +a[2], cola: !!+a[3], kind: "income", note: noteOf(a[4]),
+        // No 6th element (links older than income sources) or junk => Soc. Sec.,
+        // taxed and cut: the conservative reading of an income whose type we
+        // were never told. Opening an old link can therefore show a LOWER
+        // success rate than it did -- that is the correction, not a regression.
+        src: INCOME_SOURCES[+a[5]] || "ss" }));
     clearRows("adjustRows");
     (Array.isArray(o.adj) ? o.adj.slice(0, MAX_FLOWS) : []).forEach((a) =>
-      addFlowRow($("adjustRows"), true, { kind: +a[0] ? "income" : "expense", amount: +a[1], start: +a[2], end: +a[3], cola: !!+a[4], note: noteOf(a[5]) }));
+      // 2 = tax-free income. A legacy 1 (from before income here was taxed) reads
+      // as taxed Income: the conservative reading of an income whose tax status we
+      // were never told -- the same rule as an income row with no Source.
+      addFlowRow($("adjustRows"), true, { kind: +a[0] === 2 ? "taxfree" : +a[0] === 1 ? "income" : "expense",
+        amount: +a[1], start: +a[2], end: +a[3], cola: !!+a[4], note: noteOf(a[5]) }));
   }
   function loadHash() {
     if (!location.hash || location.hash.length < 2) return false;
@@ -1245,8 +1539,14 @@
     if (isFinite(cl)) t += "; ceiling " + fmtExact(cl);
     return t;
   }
+  // Income rows state their source, because that decides the tax and whether
+  // the Social Security cut applies; a printout must not hide either.
+  const SRC_TEXT = { ss: "Social Security, taxed", pension: "pension, taxed", taxfree: "tax-free" };
   function flowText(f) {
-    return (f.kind === "income" ? "Income " : "Expense ") + fmtExact(f.amount) + "/yr, years " +
+    const lead = f.kind !== "income" ? "Expense "
+      : f.src ? "Income (" + SRC_TEXT[f.src] + ") "
+      : f.taxed ? "Income (taxed) " : "Income (tax-free) ";
+    return lead + fmtExact(f.amount) + "/yr, years " +
       f.start + "–" + f.end + (f.cola ? ", COLA" : ", flat") + (f.note ? " — " + f.note : "");
   }
   function rptResults(rpt, label, s, isMC) {
@@ -1278,12 +1578,13 @@
       // For self-limiting strategies the success rate is ~always 100%, so the
       // report states the income risk in the same breath rather than letting
       // "100%" stand alone on paper.
-      if (sp.incomeFloor && ["percent", "vpw", "cape"].indexOf(sp.strategy) >= 0) {
+      if (sp.incomeFloor && VARIABLE_SPENDING.indexOf(sp.strategy) >= 0) {
         rptKV(sec, "Income floor vs year one (typical / rough case)",
           Math.round(sp.incomeFloor.median * 100) + "% / " + Math.round(sp.incomeFloor.p10 * 100) + "%"
           + (s.failed ? " — and " + s.failed + " run(s) still ran out"
              : sp.hasFloor ? " — your spending floor means ruin is possible in a worse sequence"
-             : " — this plan cuts income rather than running out"));
+             : SELF_LIMITING.indexOf(sp.strategy) >= 0 ? " — this plan cuts income rather than running out"
+             : " — the guardrails cut income, and this plan can still run out in a worse sequence"));
       }
       if (sp.avgMedian) rptKV(sec, "Average yearly spending (median cycle)", fmtExact(sp.avgMedian));
     }
@@ -1336,9 +1637,19 @@
     for (const id in ALLOC) { const v = num(id, 0); if (v > 0) alloc.push(v + "% " + ASSET_NAMES[ALLOC[id]]); }
     rptKV(plan, "Allocation", alloc.join(" · "));
     rptKV(plan, "Withdrawal strategy", strategyText());
-    rptKV(plan, "Fees / tax on withdrawals", num("feeRate", 0) + "% / " + num("taxRate", 0) + "%");
+    rptKV(plan, "Fees / effective tax rate", num("feeRate", 0) + "% / " + num("taxRate", 0) +
+      "% (on withdrawals and on income marked taxed)");
     rptKV(plan, "Inflation", $("inflationMode").value === "fixed" ? "fixed " + num("fixedInflation", 3) + "%/yr" : "historical CPI");
-    rptKV(plan, "Age / sex (for mortality overlay)", Math.round(num("currentAge", 65)) + " / " + $("sex").value);
+    rptKV(plan, "Age / sex (for mortality overlay)", Math.round(num("currentAge", 65)) + " / " + $("sex").value +
+      ($("partnerOn").checked ? "; partner " + Math.round(num("partnerAge", 65)) + " / " + $("partnerSex").value +
+        " (money must last to the second death)" : ""));
+    // From the params of the run being printed, not the live inputs: Cmd/Ctrl+P
+    // rebuilds this without re-running.
+    const sc = state.params && state.params.ssCut;
+    rptKV(plan, "Social Security", sc
+      ? "cut to " + Math.round(sc.factor * 100) + "% of scheduled from retirement year " + sc.fromYear +
+        " (retirement starts " + state.runPlanYear + ") — current law, 2026 Trustees Report"
+      : "paid in full every year (assumes Congress closes the funding gap — the optimistic case)");
     const adjS = state.adj || { effective: [], inert: [] };
     if (adjS.effective.length) rptKV(plan, "Return adjustments", adjS.effective.join(", ") +
       " — results are history shifted by these offsets, not the historical record");
@@ -1574,6 +1885,11 @@
     $("mcTrials").max = String(MAX_TRIALS);
     $("mcTrials").addEventListener("input", renderTrialsCap);
     renderTrialsCap();
+    $("partnerOn").addEventListener("change", () => { $("partnerFields").hidden = !$("partnerOn").checked; });
+    $("ybyStart").addEventListener("change", ybyRender);
+    $("ybyCsv").addEventListener("click", ybyDownload);
+    ["ssCutOn", "ssCutPct", "ssCutYear", "planYear"].forEach((id) =>
+      $(id).addEventListener(id === "ssCutOn" ? "change" : "input", syncSsCut));
     MONEY_IDS.forEach((id) => attachMoney($(id)));
     Object.keys(ALLOC).forEach((id) => $(id).addEventListener("input", updateAllocSum));
     $("inflationMode").addEventListener("change", toggleFixed);
@@ -1629,6 +1945,7 @@
     $("dollarMode").querySelectorAll("button").forEach((b) =>
       b.addEventListener("click", () => {
         state.dollar = b.dataset.dollar;
+        ybyRender();
         $("dollarMode").querySelectorAll("button").forEach((x) => x.classList.toggle("seg-on", x === b));
         $("trajUnit").textContent = state.dollar === "real" ? "real / today's $" : "nominal $";
         redrawCharts();
@@ -1649,6 +1966,7 @@
     wire();
     // Capture the pristine defaults FIRST -- before the random seed below and
     // before loadHash() -- so gather() can omit untouched fields (see above).
+    $("planYear").value = String(THIS_YEAR);
     snapshotDefaults();
     // Fresh Monte Carlo seed on every page load (6 digits, human-copyable).
     // Must run BEFORE loadHash(): share links carry mcSeed, so a restored link
@@ -1659,7 +1977,8 @@
     MONEY_IDS.forEach((id) => formatMoneyInput($(id))); // defaults + hash values get commas
     stampBuild(); renderDataHealth();
     state.adj = adjParts(); renderAdjNote();
-    syncStrategy(); syncFreq(); updateAllocSum(); toggleFixed(); toggleMcOptions(); toggleMcBlock();
+    $("partnerFields").hidden = !$("partnerOn").checked;
+    syncStrategy(); syncFreq(); syncSsCut(); updateAllocSum(); toggleFixed(); toggleMcOptions(); toggleMcBlock();
     run(null, { fromLink });
   }
 
@@ -1673,6 +1992,9 @@
     renderDataHealth,
     __runForTest: (fromLink) => run(null, { fromLink: !!fromLink }),
     __mcPending: () => !!state.mcStarted,
+    __ybyCsvText: (tr, age) => ybyCsvText(tr, age),
+    __csvCell: (v, dp) => csvCell(v, dp),
+    __yby: () => state.yby,
   };
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);

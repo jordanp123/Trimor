@@ -51,27 +51,48 @@
     return w > 0 ? r / w : 0;
   }
 
-  // Extra cash flows for retirement-year i (0-based). Income (Social Security,
-  // pensions, part-time work) reduces the portfolio draw; expenses increase it.
-  // Events are specified in 1-based retirement years; `cola` toggles inflation.
+  // Extra cash flows for retirement year i (0-based). Income reduces the
+  // portfolio draw and expenses increase it; rows are given in 1-based
+  // retirement years, and `cola` grows a row with inflation.
+  //
+  // TAX. An income row is taxed unless it is explicitly marked `taxed: false`.
+  // Every inflow used to be treated as already after tax, while the hint asked
+  // for "the annual amount" -- which people copy, gross, from a benefit
+  // statement. Pensions are normally fully taxable and up to 85% of Social
+  // Security can be, so that overstated success (measured: a $30k gross pension
+  // at 20% tax showed 77.3% instead of 62.3%). Taxing ALL of Social Security at
+  // the full rate slightly overstates its tax, which is the conservative side.
+  // One-time inflows in the adjustments list stay untaxed unless marked
+  // `taxed: true`: the canonical case, an inheritance, is not federally taxed.
+  //
+  // SOCIAL SECURITY CUT. Rows marked `ss: true` are scaled by p.ssCut.factor from
+  // retirement year p.ssCut.fromYear on: current law's automatic reduction to
+  // the payable share once the retirement trust fund is exhausted. It applies to
+  // every Social Security row from that year, including benefits claimed later.
   function flows(p, i, cumInfl) {
-    let income = 0, expense = 0;
+    let income = 0, taxedIncome = 0, expense = 0;
     const ry = i + 1; // 1-based retirement year
+    const cut = p.ssCut && p.ssCut.factor >= 0 && p.ssCut.factor < 1 ? p.ssCut : null;
     const inc = p.incomes || [];
     for (let k = 0; k < inc.length; k++) {
       const f = inc[k];
-      if (ry >= f.start && ry <= f.end) income += f.amount * (f.cola ? cumInfl : 1);
+      if (ry < f.start || ry > f.end) continue;
+      let amt = f.amount * (f.cola ? cumInfl : 1);
+      if (f.ss && cut && ry >= cut.fromYear) amt *= cut.factor;
+      income += amt;
+      if (f.taxed !== false) taxedIncome += amt;
     }
     const adj = p.adjustments || [];
     for (let k = 0; k < adj.length; k++) {
       const a = adj[k];
-      if (ry >= a.start && ry <= a.end) {
-        const amt = a.amount * (a.cola ? cumInfl : 1);
-        if (a.kind === "income") income += amt;
-        else expense += amt;
-      }
+      if (ry < a.start || ry > a.end) continue;
+      const amt = a.amount * (a.cola ? cumInfl : 1);
+      if (a.kind === "income") {
+        income += amt;
+        if (a.taxed === true) taxedIncome += amt;
+      } else expense += amt;
     }
-    return { income, expense };
+    return { income, taxedIncome, expense };
   }
 
   // Clamp a withdrawal to optional real floor/ceiling (expressed in today's $).
@@ -105,16 +126,16 @@
    * Returns { series:[N+1], endValue, endValueReal, success, failedYear,
    *           inflationFactor, withdrawals:[N] (nominal) }.
    */
-function simulateCycle(p, ret, infl, cape, runYears) {
-  const N = p.years;   // the PLANNED horizon -- what the retiree is budgeting for
-  // Years we can actually OBSERVE. A *truncated* cycle is a start year whose
-  // market data runs out before the plan ends (a 60-year plan starting 1969,
-  // with history ending 2025, can only be watched for 57). It still plans for
-  // N years, so VPW's amortization factor, Guyton's final-15-years rule and
-  // the final-year failure convention below all deliberately keep using N --
-  // only the loop stops early. Shortening N instead would quietly simulate a
-  // different, shorter retirement than the one being tested.
-  const R = runYears == null ? N : Math.max(0, Math.min(N, runYears));
+  function simulateCycle(p, ret, infl, cape, runYears, trace) {
+    const N = p.years;   // the PLANNED horizon -- what the retiree is budgeting for
+    // Years we can actually OBSERVE. A *truncated* cycle is a start year whose
+    // market data runs out before the plan ends (a 60-year plan starting 1969,
+    // with history ending 2025, can only be watched for 57). It still plans for
+    // N years, so VPW's amortization factor, Guyton's final-15-years rule and
+    // the final-year failure convention below all deliberately keep using N --
+    // only the loop stops early. Shortening N instead would quietly simulate a
+    // different, shorter retirement than the one being tested.
+    const R = runYears == null ? N : Math.max(0, Math.min(N, runYears));
     const sp = p.spending;
     const alloc = p.allocation;
     const feeRate = p.feeRate || 0;
@@ -140,6 +161,7 @@ function simulateCycle(p, ret, infl, cape, runYears) {
     let failed = -1;
 
     for (let i = 0; i < R; i++) {
+      const startBal = port;
       // Monte Carlo passes a precomputed portfolio-return array (__port); the
       // historical path passes per-asset series and we weight them here.
       const r = ret.__port ? ret.__port[i] : weightedReturn(alloc, ret, i);
@@ -215,11 +237,14 @@ function simulateCycle(p, ret, infl, cape, runYears) {
 
       // 2) Net the extra cash flows, then draw from the portfolio.
       const f = flows(p, i, cumInfl);
-      let draw = spend + f.expense - f.income; // negative => surplus reinvested
-      // Effective tax on withdrawals: to NET `draw` dollars when a share t of the
-      // GROSS withdrawal goes to tax, you must withdraw draw/(1-t). (The previous
+      const t = taxRate > 0 ? Math.min(taxRate, 0.95) : 0;
+      // Taxed income nets only (1 - t) of itself; untaxed income nets in full.
+      const incomeTax = f.taxedIncome * t;
+      const drawNet = spend + f.expense - (f.income - incomeTax); // < 0 => surplus reinvested
+      // Effective tax on withdrawals: to NET drawNet when a share t of the GROSS
+      // withdrawal goes to tax, you must withdraw drawNet/(1-t). (The previous
       // draw*(1+t) treated t as a share of the net and understated the gross-up.)
-      if (taxRate > 0 && draw > 0) draw /= 1 - Math.min(taxRate, 0.95);
+      const draw = t > 0 && drawNet > 0 ? drawNet / (1 - t) : drawNet;
       const fee = port * feeRate;
       const need = draw + fee;
       realWithdrawals[i] = spend / cumInfl; // cumInfl is the deflator at the start of year i
@@ -228,6 +253,16 @@ function simulateCycle(p, ret, infl, cape, runYears) {
         // Can't cover this year's outflow. Running dry BEFORE the final year is
         // a failure; spending the last dollars in the final year completes the
         // plan (cFIREsim convention: failure = ran out *before* the end).
+        // ranOut mirrors the success test below: only running dry BEFORE the
+        // final year is a failure. Using the last of the money in the final year
+        // completes the plan -- floorless VPW does that by design in every cycle,
+        // and marking those "ran out" put a red failure under a 100% headline.
+        if (trace) trace.push({
+          year: i + 1, start: startBal, spend, income: f.income, incomeTax, expense: f.expense,
+          withdrawal: startBal, withdrawalTax: 0, fee: 0, shortfall: need - startBal,
+          ret: r, infl: infl[i], bucket: 0, end: 0, deflStart: cumInfl, deflEnd: cumInfl,
+          ranOut: i < N - 1, depleted: true,
+        });
         port = 0;
         series[i + 1] = realSeries[i + 1] = 0;
         if (i < N - 1) {
@@ -243,10 +278,17 @@ function simulateCycle(p, ret, infl, cape, runYears) {
       // Monthly mode: credit the risk-free interest the year's spending earned
       // while sitting in the T-bill bucket. `spend` is the amount deposited in
       // January; it never carried market risk, so it's added after growth.
-      if (monthly) port += bucketInterest(spend, tbill ? tbill[i] : 0);
+      const bucket = monthly ? bucketInterest(spend, tbill ? tbill[i] : 0) : 0;
+      port += bucket;
       series[i + 1] = port;
+      const deflStart = cumInfl;
       cumInfl *= 1 + infl[i];
       realSeries[i + 1] = port / cumInfl; // cumInfl now covers years 0..i
+      if (trace) trace.push({
+        year: i + 1, start: startBal, spend, income: f.income, incomeTax, expense: f.expense,
+        withdrawal: draw, withdrawalTax: draw > 0 ? draw - drawNet : 0, fee, shortfall: 0,
+        ret: r, infl: infl[i], bucket, end: port, deflStart, deflEnd: cumInfl, ranOut: false,
+      });
       prevReturn = r;
       if (sp.strategy === "cape" && !cape) {
         // Forward CAPE proxy: valuation drifts with the real return net of assumed
@@ -560,18 +602,45 @@ function simulateCycle(p, ret, infl, cape, runYears) {
   }
 
   // Run every historical N-year cycle that fits the dataset + the allocation.
-  function runHistorical(p, data) {
-    const yrs = data.years;
-    const N = p.years;
+  // Earliest start year every input series covers: the allocated assets, and
+  // for the CAPE rule a real CAPE (~1880, once a 10-year earnings window exists).
+  function firstStartYear(p, data) {
     let startOff = validStartOffset(p, data);
-    // The CAPE rule needs a real CAPE for every simulated year, so it cannot start
-    // before the series begins (~1880, once a full 10-year earnings window exists).
     if (p.spending.strategy === "cape" && data.cape) {
       let c = 0;
       while (c < data.cape.length && (data.cape[c] == null || isNaN(data.cape[c]))) c++;
       if (c > startOff) startOff = c;
     }
-    const first = yrs[startOff];
+    return data.years[startOff];
+  }
+
+  // The inputs for ONE historical cycle starting in year s. Shared by the
+  // backtest and by the year-by-year trace, so the table can never be built
+  // from different data than the charts it sits beside.
+  function cycleInputs(p, data, s) {
+    const yrs = data.years, N = p.years, off = s - yrs[0];
+    const ret = {};
+    for (let a = 0; a < ASSETS.length; a++) {
+      const key = ASSETS[a];
+      if (data[key] && p.allocation[key] > 0) ret[key] = data[key].slice(off, off + N);
+    }
+    // Monthly percentage mode needs the year's T-bill rate for the cash bucket,
+    // regardless of whether cash is in the allocation.
+    if (p.spending.strategy === "percent" && p.spending.monthly && data.cash) {
+      ret.__tbill = data.cash.slice(off, off + N);
+    }
+    return {
+      ret,
+      infl: data.inflation.slice(off, off + N),
+      cape: p.spending.strategy === "cape" && data.cape ? data.cape.slice(off, off + N) : null,
+      observable: Math.min(N, yrs[yrs.length - 1] - s + 1),
+    };
+  }
+
+  function runHistorical(p, data) {
+    const yrs = data.years;
+    const N = p.years;
+    const first = firstStartYear(p, data);
     const lastYear = yrs[yrs.length - 1];
     if (lastYear < first) return emptySummary(N);
     // Iterate EVERY start year, not just those with a full N years of data.
@@ -595,20 +664,8 @@ function simulateCycle(p, ret, infl, cape, runYears) {
     const cycles = [];
     let indeterminate = 0;
     for (let s = first; s <= lastYear; s++) {
-      const off = s - yrs[0];
-      const ret = {};
-      for (let a = 0; a < ASSETS.length; a++) {
-        const key = ASSETS[a];
-        if (data[key] && p.allocation[key] > 0) ret[key] = data[key].slice(off, off + N);
-      }
-      const infl = data.inflation.slice(off, off + N);
-      const capeSlice = p.spending.strategy === "cape" && data.cape ? data.cape.slice(off, off + N) : null;
-      // Monthly percentage mode needs the year's T-bill rate for the cash bucket,
-      // regardless of whether cash is in the allocation.
-      if (p.spending.strategy === "percent" && p.spending.monthly && data.cash) {
-        ret.__tbill = data.cash.slice(off, off + N);
-      }
-      const res = simulateCycle(p, ret, infl, capeSlice, Math.min(N, lastYear - s + 1));
+      const c = cycleInputs(p, data, s);
+      const res = simulateCycle(p, c.ret, c.infl, c.cape, c.observable);
       res.startYear = s;
       if (res.complete || !res.success) cycles.push(res); // fully observed, or a known failure
       else indeterminate++;                               // outlived the data; unknowable
@@ -640,6 +697,22 @@ function simulateCycle(p, ret, infl, cape, runYears) {
     summary.fullCycles = fullCycles;
     summary.truncatedFailures = cycles.length - fullCycles;
     return summary;
+  }
+
+  // Year-by-year detail for ONE historical cycle: the same cycleInputs and the
+  // same simulateCycle as the backtest, with tracing switched on, so every row
+  // agrees with the charts to the cent. Rows stop at the year the money ran
+  // out, or where the data ends for a start year too recent to finish.
+  // Returns null for a start year the plan's inputs cannot cover.
+  function traceHistorical(p, data, startYear) {
+    const yrs = data.years;
+    if (!(startYear >= firstStartYear(p, data)) || startYear > yrs[yrs.length - 1]) return null;
+    const c = cycleInputs(p, data, startYear), rows = [];
+    const res = simulateCycle(p, c.ret, c.infl, c.cape, c.observable, rows);
+    return {
+      startYear, rows, success: res.success, failedYear: res.failedYear,
+      complete: res.complete, observedYears: res.observedYears, years: p.years,
+    };
   }
 
   // Bisection solver: max initial spending whose success rate >= target.
@@ -775,6 +848,6 @@ function simulateCycle(p, ret, infl, cape, runYears) {
   SWR.core = {
     ASSETS, weightedReturn, simulateCycle, summarize, runHistorical,
     solveSpending, solveGuardrail, histogram, histogramLog, validStartOffset, capeRate,
-    bucketInterest, adjustReturns,
+    bucketInterest, adjustReturns, traceHistorical, firstStartYear,
   };
 })(typeof self !== "undefined" ? self : this);

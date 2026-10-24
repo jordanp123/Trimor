@@ -302,6 +302,134 @@ assert(rSafe.successRate === 1 && rSafe.lowestReal.min > 0,
       (v32.successRate * 100).toFixed(2) + "% vs 33yr " + (v33.successRate * 100).toFixed(2) + "%");
   })();
 
+  // ---- income tax, the Social Security cut, and the year-by-year trace -------
+  (function () {
+    function plan(o) {
+      return P(Object.assign({ years: 30, spending: { strategy: "constant", initial: 70000 } }, o));
+    }
+    var pension = { amount: 30000, start: 1, end: 30, cola: true };
+
+    // Income used to be treated as already after tax. With a 20% rate, a $30k
+    // gross pension must now count as $24k, exactly as if it had been netted.
+    var taxed = core.runHistorical(plan({ taxRate: 0.2, incomes: [pension] }), data);
+    var netted = core.runHistorical(plan({ taxRate: 0.2,
+      incomes: [Object.assign({}, pension, { amount: 24000, taxed: false })] }), data);
+    assert(Math.abs(taxed.successRate - netted.successRate) < 1e-12,
+      "a taxed $30k pension at 20% behaves exactly like $24k net (" +
+      (taxed.successRate * 100).toFixed(1) + "%)");
+    var untaxed = core.runHistorical(plan({ taxRate: 0.2,
+      incomes: [Object.assign({}, pension, { taxed: false })] }), data);
+    assert(untaxed.successRate > taxed.successRate,
+      "marking it tax-free restores the old (higher) result: " +
+      (untaxed.successRate * 100).toFixed(1) + "% vs " + (taxed.successRate * 100).toFixed(1) + "%");
+    assert(Math.abs(core.runHistorical(plan({ taxRate: 0, incomes: [pension] }), data).successRate -
+      core.runHistorical(plan({ taxRate: 0, incomes: [Object.assign({}, pension, { taxed: false })] }), data).successRate) < 1e-12,
+      "with no tax rate, taxed and untaxed income are identical");
+
+    // One-time inflows stay untaxed (an inheritance is not federally taxed),
+    // but can opt in.
+    var inh = { kind: "income", amount: 200000, start: 10, end: 10, cola: false };
+    // At $40k (4%) the median cycle survives, so the inflow's tax shows up in the
+    // ending balance; at the $70k used above nearly every cycle fails and both
+    // medians are $0, which would hide any difference.
+    var spend40 = { strategy: "constant", initial: 40000 };
+    var aDefault = core.runHistorical(plan({ taxRate: 0.3, spending: spend40, adjustments: [inh] }), data);
+    var aTaxed = core.runHistorical(plan({ taxRate: 0.3, spending: spend40,
+      adjustments: [Object.assign({}, inh, { taxed: true })] }), data);
+    assert(aTaxed.endingReal.median < aDefault.endingReal.median,
+      "a one-time inflow is untaxed by default and taxed only when marked");
+
+    // Social Security cut: SS rows only, from the cut year on.
+    var ssRow = { amount: 30000, start: 1, end: 30, cola: true, ss: true };
+    var cut = { fromYear: 7, factor: 0.78 };
+    var full = core.runHistorical(plan({ incomes: [ssRow] }), data);
+    var cutRun = core.runHistorical(plan({ incomes: [ssRow], ssCut: cut }), data);
+    assert(cutRun.successRate <= full.successRate && cutRun.endingReal.median < full.endingReal.median,
+      "cutting Social Security to 78% lowers results (" + (full.successRate * 100).toFixed(1) +
+      "% -> " + (cutRun.successRate * 100).toFixed(1) + "%)");
+    var pensionOnly = core.runHistorical(plan({ incomes: [pension] }), data);
+    assert(core.runHistorical(plan({ incomes: [pension], ssCut: cut }), data).successRate === pensionOnly.successRate,
+      "the cut leaves non-Social-Security income alone");
+    assert(core.runHistorical(plan({ incomes: [ssRow], ssCut: { fromYear: 7, factor: 1 } }), data).successRate === full.successRate,
+      "a 100% factor is no cut at all");
+
+    // The trace must reproduce the backtest TO THE CENT, in every start year,
+    // because it is the same code path -- and the table is only trustworthy if so.
+    var tp = plan({ taxRate: 0.15, feeRate: 0.004, incomes: [ssRow, pension], ssCut: cut,
+      adjustments: [{ kind: "expense", amount: 15000, start: 3, end: 8, cola: true }] });
+    var bt = core.runHistorical(tp, data), worstDiff = 0, rowsChecked = 0, ranOutSeen = 0;
+    bt.sampleSeries.forEach(function (c) {
+      var tr = core.traceHistorical(tp, data, c.startYear);
+      tr.rows.forEach(function (row) {
+        rowsChecked++;
+        worstDiff = Math.max(worstDiff, Math.abs(row.end - c.series[row.year]));
+        if (row.ranOut) ranOutSeen++;
+      });
+      if (!c.success) assert(tr.rows[tr.rows.length - 1].ranOut && tr.rows.length === c.failedYear + 1,
+        "trace of " + c.startYear + " stops in the year the money ran out");
+    });
+    assert(rowsChecked > 1000 && worstDiff < 0.005,
+      "trace end balances equal the backtest's series in every row (" + rowsChecked +
+      " rows, worst diff $" + worstDiff.toFixed(6) + ")");
+    assert(ranOutSeen === bt.failed, "one ran-out row per failed cycle (" + ranOutSeen + ")");
+
+    // Each traced year must balance: start - withdrawal - fee, grown, plus bucket = end.
+    var one = core.traceHistorical(tp, data, 1966), worstBal = 0;
+    one.rows.forEach(function (row) {
+      if (row.ranOut) return;
+      var expect = (row.start - row.withdrawal - row.fee) * (1 + row.ret) + row.bucket;
+      worstBal = Math.max(worstBal, Math.abs(expect - row.end));
+    });
+    assert(worstBal < 0.005, "every traced year balances (worst $" + worstBal.toFixed(6) + ")");
+    assert(core.traceHistorical(tp, data, 1800) === null && core.traceHistorical(tp, data, 3000) === null,
+      "out-of-range start years return null rather than a fabricated table");
+  })();
+
+  // ---- Guyton: a worse world can raise the success RATE -----------------------
+  // Found in the audit. Cutting Social Security on a 60-year Guyton plan RAISED
+  // success, because the guardrails cut spending earlier and that protected the
+  // portfolio. The retiree is worse off, so the cost has to show up somewhere a
+  // reader can see: the rough-case income must fall even if the rate rises.
+  (function () {
+    // The inversion is path-dependent and configuration-specific: it appears at
+    // the audit's 0.1% fee and REVERSES at 0% (95.8% -> 94.8%). So this pins the
+    // exact documented case rather than claiming the effect is general.
+    var gp = P({ years: 60, taxRate: 0.15, feeRate: 0.001,
+      spending: { strategy: "guyton", initial: 60000, guard: 0.2, gkAdjust: 0.1 },
+      incomes: [{ amount: 24000, start: 3, end: 40, cola: true, ss: true }, { amount: 15000, start: 1, end: 40, cola: false }],
+      adjustments: [{ kind: "expense", amount: 12000, start: 2, end: 6, cola: true },
+                    { kind: "income", amount: 80000, start: 9, end: 9, cola: false }] });
+    var full = core.runHistorical(gp, data);
+    var cut = core.runHistorical(Object.assign({}, gp, { ssCut: { fromYear: 7, factor: 0.78 } }), data);
+    assert(cut.successRate > full.successRate,
+      "the documented case still occurs: the cut RAISES Guyton's success rate (" +
+      (full.successRate * 100).toFixed(1) + "% -> " + (cut.successRate * 100).toFixed(1) + "%)");
+    assert(cut.spending.leanestYear.p10 < full.spending.leanestYear.p10,
+      "...but the rough-case leanest year FALLS ($" + Math.round(full.spending.leanestYear.p10) +
+      " -> $" + Math.round(cut.spending.leanestYear.p10) + "), so the cost is visible");
+  })();
+
+  // ---- review #1: using up the money in the FINAL year is not "ran out" -------
+  // Floorless VPW spends its last dollar in year N by design; with any fee that
+  // year can't quite cover itself. The engine counts that as completing the plan,
+  // so the trace must not mark it a failure (it did, in all 126 cycles, under a
+  // 100% headline).
+  (function () {
+    var vp = P({ feeRate: 0.001, spending: { strategy: "vpw", vpwReturn: 0.034 } });
+    var s = core.runHistorical(vp, data), bad = 0, depletedFinal = 0;
+    s.sampleSeries.forEach(function (c) {
+      var last = core.traceHistorical(vp, data, c.startYear).rows.slice(-1)[0];
+      if (c.success && last.ranOut) bad++;
+      if (last.depleted && !last.ranOut && last.year === vp.years) depletedFinal++;
+    });
+    assert(bad === 0, "no cycle the engine counts as a success is traced as 'ran out' (" + bad + ")");
+    assert(depletedFinal > 0, "...while final-year depletion is still recorded, as depleted (" + depletedFinal + ")");
+    var fail = core.runHistorical(P({ spending: { strategy: "constant", initial: 70000 } }), data);
+    var f = fail.sampleSeries.filter(function (c) { return !c.success; })[0];
+    var fl = core.traceHistorical(P({ spending: { strategy: "constant", initial: 70000 } }), data, f.startYear).rows.slice(-1)[0];
+    assert(fl.ranOut && fl.year === f.failedYear + 1, "a genuine failure is still traced as 'ran out' in the right year");
+  })();
+
   // ---- T-bill bucket: symmetric in sign --------------------------------------
   // The bucket used to floor a negative rate at $0, so it credited interest in
   // good years and discarded losses in bad ones -- a one-way bet that could only

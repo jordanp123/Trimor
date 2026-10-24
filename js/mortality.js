@@ -39,5 +39,36 @@
     return (M.male.e[i] + M.female.e[i]) / 2;
   }
 
-  SWR.mortality = { survivalCurve, lifeExpectancy };
+  // Chance that AT LEAST ONE of two people is still alive t years from now --
+  // how long a couple's money actually has to last, since it must outlive the
+  // second death, not the first. For a couple both 65 that is about 51% at 90,
+  // against 24% for the man alone.
+  //
+  // Assumes the two lifetimes are independent. Spouses' mortality is in fact
+  // positively correlated (shared habits, environment, the "widowhood effect"),
+  // which makes both dying early MORE likely and so shortens joint survival.
+  // Independence therefore overstates how long the money must last: the
+  // conservative side, deliberately.
+  function jointSurvivalCurve(age1, sex1, age2, sex2, years) {
+    const a = survivalCurve(age1, sex1, years), b = survivalCurve(age2, sex2, years);
+    if (!a || !b) return null;
+    const out = new Array(years + 1);
+    for (let t = 0; t <= years; t++) out[t] = 1 - (1 - a[t]) * (1 - b[t]);
+    return out;
+  }
+
+  // Expected years until the SECOND death. E[max(T1, T2)] is the sum over t of
+  // P(at least one alive at t); adding 0.5 turns that curtate sum into a
+  // complete expectation, matching how the table states its own e_x.
+  function jointLifeExpectancy(age1, sex1, age2, sex2) {
+    const M = root.SWR_MORTALITY;
+    if (!M) return null;
+    const span = Math.max(1, M.lastAge - Math.min(Math.round(age1) || M.firstAge, Math.round(age2) || M.firstAge) + 1);
+    const j = jointSurvivalCurve(age1, sex1, age2, sex2, span);
+    let e = 0;
+    for (let t = 1; t <= span; t++) e += j[t];
+    return e + 0.5;
+  }
+
+  SWR.mortality = { survivalCurve, lifeExpectancy, jointSurvivalCurve, jointLifeExpectancy };
 })(typeof self !== "undefined" ? self : this);

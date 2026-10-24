@@ -17,6 +17,26 @@ A(noteVal.indexOf("<img") === 0, "hostile note stored as an inert value, not par
 var adjNote = document.getElementById("adjustRows").querySelectorAll(".flowrow")[0].querySelector(".f-note").value;
 A(adjNote === "", "non-string note from the hash dropped (got '" + adjNote + "')");
 
+// New share-link fields (income source, plan start year, Social Security cut,
+// partner): attacker-shaped values must fall back safely, never corrupt state.
+(function () {
+  var rows = document.getElementById("incomeRows").querySelectorAll(".flowrow");
+  var srcs = [1, 2, 3, 4].map(function (i) { return rows[i].querySelector(".f-src").value; });
+  A(srcs.every(function (v) { return v === "ss"; }),
+    "junk income-source codes (__proto__, 999, object, -1) all fall back to Soc. Sec. (" + srcs.join(",") + ")");
+  A(rows[5].querySelector(".f-src").value === "pension", "a valid source code from the hash is still honoured");
+  var hint = document.getElementById("ssCutHint").textContent, yr = new Date().getFullYear();
+  A(hint.indexOf("starts in " + yr) >= 0,
+    "a hostile plan start year ('__proto__') is ignored; the plan still starts in " + yr);
+  A(!/NaN|undefined|Infinity/.test(hint), "the Social Security hint never shows NaN/undefined/Infinity");
+  // The run itself must be refused (years is absurd), so nothing downstream ran
+  // on the hostile cut values; and validate() would refuse them on their own.
+  A(document.getElementById("formMsg").textContent.length > 0, "the hostile plan is refused rather than run");
+  // Partner age is clamped where it is read, even with no run.
+  var age = Math.max(18, Math.min(110, Math.round(+document.getElementById("partnerAge").value || 65)));
+  A(age === 110, "a 1e308 partner age clamps to 110 at the point of use");
+})();
+
 // A share-link seed must override init()'s load-time randomization (the random
 // seed is written BEFORE loadHash), or shared links stop replaying exactly.
 A(document.getElementById("mcSeed").value === "424242",
@@ -65,6 +85,16 @@ A(isFinite(cr.endingReal.median) && cr.successRate >= 0 && cr.successRate <= 1,
 var fire = function (el, type) { (el && el._ev && el._ev[type] || []).forEach(function (fn) { fn({ preventDefault: function () {} }); }); };
 document.getElementById("initialValue").value = "1000000";
 document.getElementById("years").value = "30";
+fire(document.getElementById("inputs"), "submit");
+A(document.getElementById("formMsg").textContent.indexOf("Social Security") >= 0,
+  "with years fixed, the hostile Social Security cut is what still blocks the run (" +
+  document.getElementById("formMsg").textContent + ")");
+document.getElementById("initialValue").value = "1000000";
+document.getElementById("years").value = "30";
+// The hostile Social Security cut is ALSO refused by validate() now, so a
+// recovering user has to correct it too -- that refusal is the right behaviour.
+document.getElementById("ssCutPct").value = "78";
+document.getElementById("ssCutYear").value = "2032";
 fire(document.getElementById("inputs"), "submit");
 var big = document.getElementById("successBig").textContent;
 A(/%$/.test(big), "recovery run renders a success % despite hostile initialSpend (" + big + ")");

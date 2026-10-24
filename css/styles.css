@@ -185,17 +185,24 @@ details > summary::-webkit-details-marker { color: var(--ink-soft); }
    slim as their content allows and the flexible ones (type / amount / note)
    share the rest, amount getting the biggest cut -- it's the column that must
    never truncate. */
-.flowrow, .flowhead { display: grid; grid-template-columns: minmax(46px, 0.8fr) minmax(78px, 1.2fr) 42px 42px 30px minmax(46px, 0.8fr) 28px; gap: 4px; align-items: center; }
-.flowrow input, .flowrow select { padding-left: 6px; padding-right: 6px; }
-.flowrow select { background-position: right 5px center; padding-right: 18px; }
+/* The first column holds a select (income Source / adjustment Type). It was
+   minmax(46px, 0.8fr), which resolved to 58px in the desktop side panel and
+   clipped "Soc. Sec." to "Soc…" and "Expense" to "Exp…" (they need 79px and
+   73px). Its floor is now 88px (label + the 20px arrow allowance below); the room comes from the start/end boxes, which
+   only ever hold one or two digits. Mobile (≤520px) uses its own 2-column grid. */
+.flowrow, .flowhead { display: grid; grid-template-columns: minmax(88px, 1fr) minmax(76px, 1.1fr) 38px 38px 28px minmax(40px, 0.7fr) 28px; gap: 4px; align-items: center; }
 .flowrow .f-note { font-size: 12px; }
 .flowrow .rm { padding-left: 0; padding-right: 0; }
 .flowhead { padding: 0 2px 2px; }
 .fh { font-size: 10px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.04em; text-align: center; }
 .fh:nth-child(1) { text-align: left; }
 .fh:nth-child(2) { text-align: left; }
-.rowlabel { font-size: 12px; color: var(--ink-soft); white-space: nowrap; }
 .flowrow input, .flowrow select { padding: 7px 8px; min-width: 0; }
+/* Selects keep room for their dropdown arrow. This must come AFTER the rule
+   above: that one resets padding on inputs and selects alike, and it used to
+   wipe out an earlier arrow allowance, leaving the arrow drawn over the last
+   letters of "Soc. Sec." and "Expense". 12px matches the Note field. */
+.flowrow select { padding-right: 20px; font-size: 12px; background-position: right 6px center; }
 .flowrow .col-cola { justify-self: center; }
 .small { font-size: 11.5px; line-height: 1.45; }
 .flowrow .col-cola { display: flex; align-items: center; justify-content: center; }
@@ -415,7 +422,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   font-size: 12.5px; line-height: 1.5; color: var(--ink);
   background: rgba(230, 149, 0, 0.10); border: 1px solid rgba(230, 149, 0, 0.42);
 }
-.adj-note[hidden] { display: none; }
 
 /* Methodological caveat tied to the chosen strategy. Deliberately quieter than
    .adj-note: that one says the numbers are not historical, this one says a
@@ -426,10 +432,32 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   background: var(--panel-2, rgba(127, 127, 127, 0.07));
   border: 1px solid var(--line);
 }
-.method-note[hidden] { display: none; }
 
 /* Shown only when the typed trial count exceeds the engine's limit, so the
    number on screen and the number actually simulated can never disagree
    silently (the reported confusion: type 90,000, get 50,000 back). */
 .trials-cap { margin: 4px 0 0; color: var(--warn); }
-.trials-cap[hidden] { display: none; }
+
+/* Social Security cut: sits under the income rows, set off by a hairline so it
+   reads as a setting for those rows rather than as another row. */
+.ss-cut { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.ss-cut .row2 { margin-top: 8px; }
+
+/* Partner: a toggle under the age/sex row; its fields appear only when on. */
+.partner-toggle { margin-top: 10px; }
+#partnerFields { margin-top: 8px; }
+
+/* Year-by-year table. The wrapper scrolls sideways on narrow screens so the
+   page itself never does; numbers are tabular and right-aligned so columns
+   can be read down. The ran-out row is marked with the theme's own --bad. */
+.yby-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.yby-head h3 { margin: 0; }
+.yby-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.yby-controls select { width: auto; max-width: 240px; }
+.yby-wrap { overflow-x: auto; margin-top: 8px; border: 1px solid var(--line); border-radius: 10px; }
+.yby-table { border-collapse: collapse; width: 100%; font-size: 12px; font-variant-numeric: tabular-nums; }
+.yby-table th, .yby-table td { padding: 5px 8px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
+.yby-table th { position: sticky; top: 0; background: var(--panel); color: var(--ink-soft); font-weight: 600; font-size: 11px; }
+.yby-table th:first-child, .yby-table td:first-child { text-align: left; }
+.yby-table tr.ran-out td { color: var(--bad); font-weight: 600; }
+.yby-table tbody tr:last-child td { border-bottom: 0; }

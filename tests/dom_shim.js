@@ -129,6 +129,10 @@ var DEFAULTS = {
   adjGold: { type: "number", value: "0" }, adjCash: { type: "number", value: "0" },
   adjCorp: { type: "number", value: "0" }, adjReit: { type: "number", value: "0" },
   adjSmallcap: { type: "number", value: "0" },
+  ssCutOn: { type: "checkbox", checked: true }, ssCutPct: { type: "number", value: "78" },
+  ssCutYear: { type: "number", value: "2032" }, planYear: { type: "number", value: "" },
+  partnerOn: { type: "checkbox", checked: false }, partnerAge: { type: "number", value: "65" },
+  partnerSex: { type: "select-one", value: "female" },
   allocStocks: { type: "number", value: "75" }, allocBonds: { type: "number", value: "25" },
   allocGold: { type: "number", value: "0" }, allocCash: { type: "number", value: "0" },
   allocCorp: { type: "number", value: "0" }, allocReit: { type: "number", value: "0" }, allocSmallcap: { type: "number", value: "0" },
@@ -149,7 +153,7 @@ var DEFAULTS = {
 // Non-input element ids that exist in index.html.
 var KNOWN = {};
 ["themeBtn", "helpBtn", "helpOverlay", "helpClose", "helpTitle", "inputs", "allocSum", "spendRateHint", "fixedInflationWrap", "fixedInflationHint", "incomeRows", "addIncome",
- "adjustRows", "addAdjust", "mcOptions", "mcBlockWrap", "mcVarBlockWrap", "mcVarBlockHint", "adjBox", "adjBadge", "adjNote", "horizonNote", "mcTrialsCap", "runBtn", "solveBtn", "shareBtn",
+ "adjustRows", "addAdjust", "mcOptions", "mcBlockWrap", "mcVarBlockWrap", "mcVarBlockHint", "adjBox", "adjBadge", "adjNote", "horizonNote", "mcTrialsCap", "ssCutFields", "ssCutHint", "partnerFields", "rbdTitle", "ybyCard", "ybyStart", "ybyCsv", "ybyNote", "ybyWrap", "runBtn", "solveBtn", "shareBtn",
  "capeRateNow", "withdrawFreq", "withdrawFreqHint", "printBtn", "report", "buildStamp", "dataWarning",
  "resetBtn", "solveBasis", "solveResult", "gsolveBtn", "gsolveBasis", "gsolveResult", "formMsg", "results", "successCard", "successKind", "successBig", "successLabel", "headStats",
  "progressWrap", "progressBar", "progressLabel", "trajMode", "dollarMode", "trajUnit", "trajCanvas", "histCanvas",

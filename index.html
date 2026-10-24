@@ -99,6 +99,21 @@
             </select>
           </div>
         </div>
+        <label class="checkline partner-toggle"><input id="partnerOn" type="checkbox" /> Planning for two — the money must last until the second death</label>
+        <div class="row2" id="partnerFields" hidden>
+          <div class="field">
+            <label for="partnerAge">Partner's age now</label>
+            <input id="partnerAge" type="number" min="18" max="110" step="1" value="65" />
+          </div>
+          <div class="field">
+            <label for="partnerSex">Partner's sex <span class="hint">SSA life table</span></label>
+            <select id="partnerSex">
+              <option value="female">Female</option>
+              <option value="male">Male</option>
+              <option value="blended">Average</option>
+            </select>
+          </div>
+        </div>
 
         <fieldset class="alloc">
           <legend>Asset allocation <span id="allocSum" class="alloc-sum">100%</span></legend>
@@ -222,7 +237,7 @@
             <div class="suffixed"><input id="fixedInflation" type="number" min="0" max="20" step="0.1" value="3" /><span>%</span></div>
           </div>
           <div class="field">
-            <label for="taxRate">Effective tax on withdrawals <span class="hint">simplified</span></label>
+            <label for="taxRate">Effective tax rate <span class="hint">simplified</span></label>
             <div class="suffixed"><input id="taxRate" type="number" min="0" max="60" step="1" value="0" /><span>%</span></div>
           </div>
         </div>
@@ -232,16 +247,28 @@
       <section class="group">
         <details>
           <summary><h2 class="inline">Income (Social Security, pensions)</h2></summary>
-          <p class="hint">Money coming in — Social Security, a pension, an annuity. Set the annual amount and the retirement years it runs (<strong>year&nbsp;1 = your first year retired</strong>), and tick <strong>COLA</strong> if it should grow with inflation. Inflows reduce what you withdraw from the portfolio.</p>
+          <p class="hint">Money coming in — Social Security, a pension, an annuity. Enter the <strong>gross</strong> annual amount — the figure on your benefit statement — and the retirement years it runs (<strong>year&nbsp;1 = your first year retired</strong>); tick <strong>COLA</strong> if it grows with inflation. <strong>Source</strong> sets the tax: <em>Soc. Sec.</em> and <em>Pension</em> are taxed at your effective rate (taxing all of Social Security slightly overstates it, since at most 85% is taxable — the safe side); choose <em>Tax-free</em> for Roth income or an amount already after tax.</p>
           <div id="incomeRows" class="rows"></div>
           <button id="addIncome" class="ghost add" type="button">+ Add income</button>
+          <div class="ss-cut">
+            <label class="checkline"><input id="ssCutOn" type="checkbox" checked /> Assume the Social Security cut current law requires</label>
+            <div class="row2" id="ssCutFields">
+              <div class="field"><label for="ssCutPct">Benefits paid <span class="hint">% of scheduled</span></label><div class="suffixed"><input id="ssCutPct" type="number" min="0" max="100" step="1" value="78" /><span>%</span></div></div>
+              <div class="field"><label for="ssCutYear">From <span class="hint">calendar year</span></label><input id="ssCutYear" type="number" min="2000" max="2200" step="1" value="2032" /></div>
+            </div>
+            <div class="row2">
+              <div class="field"><label for="planYear">Retirement starts in <span class="hint">calendar year</span></label><input id="planYear" type="number" min="2000" max="2200" step="1" /></div>
+              <div class="field"></div>
+            </div>
+            <p class="hint" id="ssCutHint">The 2026 Social Security Trustees Report projects the retirement trust fund running out in late 2032; under current law benefits then fall to the 78% that payroll taxes can fund. Applied to every <em>Soc. Sec.</em> row from that year on, including benefits claimed later. Untick only if you are confident Congress will close the gap.</p>
+          </div>
         </details>
       </section>
 
       <section class="group">
         <details>
           <summary><h2 class="inline">Extra expenses / income (one-time or recurring)</h2></summary>
-          <p class="hint">One-off or recurring changes. Choose <strong>Expense</strong> (e.g. a new roof in year 10) or <strong>Income</strong> (e.g. part-time work in years 1–5), then the annual amount, the start/end retirement years, and COLA.</p>
+          <p class="hint">One-off or recurring changes. Choose <strong>Expense</strong> (e.g. a new roof in year 10), <strong>Income</strong> (e.g. part-time work in years 1–5 — taxed at your effective rate) or <strong>Tax-free</strong> (e.g. an inheritance, which is not federally taxed, or an amount already after tax), then the annual amount, the start/end retirement years, and COLA.</p>
           <div id="adjustRows" class="rows"></div>
           <button id="addAdjust" class="ghost add" type="button">+ Add adjustment</button>
         </details>
@@ -351,7 +378,7 @@
       </section>
 
       <section class="chart-card" id="rbdCard">
-        <div class="chart-head"><h3>Will your money outlast you? <span class="hint" id="rbdSub">SSA mortality × your outcomes</span></h3></div>
+        <div class="chart-head"><h3><span id="rbdTitle">Will your money outlast you?</span> <span class="hint" id="rbdSub">SSA mortality × your outcomes</span></h3></div>
         <canvas id="rbdCanvas" class="chart short" height="240" aria-label="Probability alive with money, alive but broke, or deceased"></canvas>
         <div class="legend">
           <span><i class="sw best"></i>Alive, money lasts</span>
@@ -365,6 +392,18 @@
         <div id="detailBody" class="detail-grid">
           <p class="muted">Results and representative cycles appear here after a run.</p>
         </div>
+      </section>
+
+      <section class="detail-card" id="ybyCard" hidden>
+        <div class="yby-head">
+          <h3>Year by year <span class="hint">one historical retirement, in full</span></h3>
+          <div class="yby-controls">
+            <select id="ybyStart" aria-label="Retirement starting in"></select>
+            <button id="ybyCsv" class="ghost" type="button" title="Download this table as a spreadsheet (both today's and nominal dollars)">Download CSV</button>
+          </div>
+        </div>
+        <p class="hint" id="ybyNote"></p>
+        <div class="yby-wrap" id="ybyWrap"></div>
       </section>
 
       <!-- Data-health banner: shown only when a cross-check failed or a source
@@ -513,6 +552,10 @@
         <h3>Historical vs Monte Carlo</h3>
         <ul>
           <li><strong>Historical</strong> replays every actual sequence of returns since 1871 — a 30-year plan is tested starting in 1871, 1872, … 1996.</li>
+          <li><strong>Income and tax.</strong> Enter Social Security and pensions at their <em>gross</em> amount, as on your benefit statement. Each income row has a <em>Source</em>: Social Security and pensions are taxed at your effective rate, while <em>Tax-free</em> is for Roth income or an amount you have already netted. Taxing all of Social Security slightly overstates the tax, since at most 85% of it is taxable — the safe side. Under Extra expenses/income, <em>Income</em> is taxed too, and <em>Tax-free</em> is for an inheritance or a gift, which are not federally taxed. Links made before this distinction read an untyped income as taxed: the conservative reading.</li>
+          <li><strong>The Social Security cut.</strong> The 2026 Trustees Report projects the retirement trust fund running out in late 2032. Under current law benefits then fall automatically to the 78% that payroll taxes can fund, for everyone, including people already retired and benefits claimed later. That cut is on by default and applied to every <em>Soc. Sec.</em> row from 2032. Congress may well act first, but assuming it will is the optimistic choice, so it is yours to make by unticking the box. The cut year is a calendar year, mapped onto retirement years from the year the plan starts; a shared link keeps its own start year, so it reproduces the same plan when opened later.</li>
+          <li><strong>Planning for two.</strong> A couple's money has to last until the <em>second</em> death, which is much later than either life expectancy alone: for two 65-year-olds there is about a 51% chance at least one reaches 90, against 24% for a man alone. Tick <em>Planning for two</em> and the mortality chart uses the chance that at least one of you is alive. The two lifetimes are treated as independent; in reality spouses' mortality is correlated, which makes it likelier you both die earlier — so this, too, errs toward assuming the money must last longer.</li>
+          <li><strong>Year by year.</strong> The table under Details replays one historical retirement in full — start balance, spending, income, expenses, tax, withdrawal, fees, the year's return and inflation, and the end balance — computed by exactly the same code as the historical backtest, so every row matches it to the cent (Monte Carlo paths are synthetic, so they have no year-by-year history to show). It opens on the worst case. Every year the portfolio covers in full satisfies <em>spending + expenses + tax = income + withdrawal</em>, so you can check it yourself. The exception is a year in which the portfolio is used up: its needs could not be met in full. That is a failure if it happens before the final year, but in the final year it completes the plan, which is how VPW is designed to end. Start years marked <em>partial</em> are too recent to finish: the table stops where history does, with money still left. <em>Download CSV</em> saves it with both today's and nominal dollars.</li>
           <li><strong>Comparing retirement lengths</strong> is exact for constant-dollar, percentage-of-portfolio and CAPE plans, whose yearly draw depends only on the balance. It is approximate for <em>VPW</em> and <em>Guyton-Klinger</em>, which size the draw from the years remaining — so changing the length changes the spending rule itself, not just the stretch of history being tested. A longer plan draws less each year, so a start year that ran dry under a shorter plan can still be solvent when the data runs out, at which point its outcome is unknown rather than failed and it leaves the success rate entirely. Measured across every allocation and length, that can let a longer plan score up to about 1.8 points <em>higher</em>. It is a limit of the historical record, not a bug to be engineered away: compare these two strategies at a single length.</li>
           <li><strong>Return adjustments</strong> shift an asset class's return by a fixed amount every year — a <em>haircut</em> when negative. The offset is added to each year's return, so &minus;0.25%/yr lowers the nominal return by exactly 0.25 points, and the real return by a/(1+inflation) &mdash; about 0.24 points at 3% inflation, since the engine deflates geometrically rather than subtracting; it is not compounded or scaled by horizon, because a constant offset is what &ldquo;0.25% less every year&rdquo; means, and anything cleverer would be a model of our own sitting on top of the historical record.
             <br />The usual reason to use it is that history may be too generous: high starting valuations argue for lower future equity returns, and today's bond yields may differ from the historical average. A common sensitivity is stocks &minus;0.25%/yr with bonds +0.25%/yr. An offset on an asset you hold none of changes nothing, and the results say so rather than claiming a stress test that never ran; the exception is Cash, which also sets the rate on the monthly withdrawal bucket because that money is held in the same T-bills. Be aware it cuts both ways — raising returns makes any plan look safer, so results with an adjustment active are labelled on screen and in the printed report, and they are <em>not</em> the historical record.</li>
