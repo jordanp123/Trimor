@@ -94,8 +94,9 @@ cp Trimor/config.webswr.example config.webswr    # edit if you want non-stock va
 ```
 
 Then follow the **Next steps** it prints: create the tunnel-token secret, enable
-lingering, list the key(s) allowed to deploy (see [Signed commits](#signed-commits-the-deploy-gate)
-— the updater refuses to run without that list), run the updater once (it
+lingering, list the key(s) allowed to deploy and check the clone you just made
+against that list (steps 3 and 4 of [Signed commits](#signed-commits-the-deploy-gate)
+— the updater refuses to run without the list), run the updater once (it
 assembles the webroot, fetches data, builds and starts everything), and enable
 the timer.
 
@@ -138,9 +139,8 @@ sed -n 's/^TUNNEL_TOKEN=//p' ~/webswr/.env | tr -d '\r\n' \
   | podman secret create webswr-tunnel-token -
 podman secret ls
 ~/webswr/Trimor/deploy/install.sh --yes
-# the trust list: see "Signed commits" below
-mkdir -p ~/.config/webswr && chmod 700 ~/.config/webswr
-printf '%s\n' 'you@example.com namespaces="git" ssh-ed25519 AAAA...' > ~/.config/webswr/allowed_signers
+# the trust list, then check the checkout against it: steps 3 and 4 of
+# "Signed commits" below
 systemctl --user start webswr-update.service     # assembles, builds, starts
 journalctl --user -u webswr-cloudflared -n 30    # expect a second connector to register
 ```
@@ -206,7 +206,7 @@ stolen GitHub login would reach every visitor by the next morning. Both update
 scripts therefore refuse to deploy a commit unless it is **signed by a key you
 listed on the server**. Someone holding your GitHub account can push code, but
 they cannot produce that signature: the private key never leaves the machine
-you commit from.
+you commit from, and the server only ever holds the public half.
 
 On every run, before anything else is touched:
 
@@ -217,59 +217,174 @@ On every run, before anything else is touched:
 - **Every** commit between the deployed one and the new tip must verify, not
   just the tip. A foreign commit stays refused even after a signed one lands on
   top of it — say, after you pulled it down without noticing.
-- A first clone is verified at its tip before it becomes the checkout.
+- A first clone made by the updater is verified at its tip before it becomes
+  the checkout.
 - A rewritten history (a force-push) is refused outright.
-- On any refusal the run aborts, `update.log` names the commit and the reason
-  (`is not signed`, `is signed by a key that is not in …`), and the site keeps
-  serving the last build that passed. A run with nothing new to deploy still
-  refreshes the market data and rebuilds as usual.
+- On any refusal the run aborts, `update.log` names the commit and the reason,
+  and the site keeps serving the last build that passed. A run with nothing new
+  to deploy still refreshes the market data and rebuilds as usual.
 
-**One-time setup on the machine you commit from.** A dedicated SSH key just for
-signing (a passphrase is optional; with one, git asks for it on each commit):
+Setting it up has three parts: a signing key where you commit, a trust list on
+the server, and the gated update script. Steps marked **signing machine** run
+where you make your commits. Everything else runs **on the server, as the
+account that runs the stack**: the one where `podman ps` lists the WebSWR
+containers (root, for the Docker `update.sh`). The server steps need no
+`sudo`: they all work inside that account's own home directory, and a folder
+created there with `sudo` would belong to root and lock the account out of it.
+
+### 1. Sign your commits (signing machine)
+
+Make a dedicated SSH key, used only for signing. A passphrase is optional; with
+one, git asks for it on each commit.
 
 ```sh
 ssh-keygen -t ed25519 -C "WebSWR commit signing" -f ~/.ssh/webswr_signing
-cd /path/to/your/checkout
+```
+
+Then, inside your checkout of the repo, turn signing on for this repo only:
+
+```sh
 git config gpg.format ssh
 git config user.signingkey ~/.ssh/webswr_signing
 git config commit.gpgsign true
 ```
 
-Optionally, let git check your own signatures locally too:
+Every commit you make here is now signed automatically. Only the `.pub` file
+ever needs to leave this machine; never copy `~/.ssh/webswr_signing` (the file
+without `.pub`) anywhere.
+
+Optionally, let git check your own signatures, so you can confirm a commit is
+signed before you push it (`>>` appends, so an existing `allowed_signers` file
+keeps its other keys):
 
 ```sh
-printf 'you@example.com namespaces="git" %s\n' "$(cat ~/.ssh/webswr_signing.pub)" > ~/.ssh/allowed_signers
+printf 'webswr-signer namespaces="git" %s\n' "$(cat ~/.ssh/webswr_signing.pub)" >> ~/.ssh/allowed_signers
 git config gpg.ssh.allowedSignersFile ~/.ssh/allowed_signers
 git log --show-signature -1
 ```
 
-**On the server**, as the deploy user, put the same line in the trust list.
-The key part is the contents of `webswr_signing.pub`; the email is only a label:
+### 2. Build the trust-list line (signing machine)
+
+```sh
+printf 'webswr-signer namespaces="git" %s\n' "$(cat ~/.ssh/webswr_signing.pub)"
+```
+
+It prints one long line. Copy all of it:
+
+```
+webswr-signer namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA…(the rest of the key)… WebSWR commit signing
+```
+
+- `webswr-signer` is only a label. Git doesn't match it against anything, so
+  there is no need to put your email or name in it.
+- `namespaces="git"` limits the key to signing git commits.
+- The key is the public half, so it is safe to paste into a terminal or a file.
+
+### 3. Create the trust list (server)
 
 ```sh
 mkdir -p ~/.config/webswr && chmod 700 ~/.config/webswr
-printf '%s\n' 'you@example.com namespaces="git" ssh-ed25519 AAAA...' > ~/.config/webswr/allowed_signers
-chmod 644 ~/.config/webswr/allowed_signers
 ```
 
-Deploying a repo someone else signs? List their public key instead of, or as
-well as, yours: one line per key.
+Replace `PASTE-THE-LINE-HERE` with the line from step 2, keeping the single
+quotes around it:
 
-**Turning it on for an existing deployment.** In this order, so nothing is
-refused by surprise:
+```sh
+echo 'PASTE-THE-LINE-HERE' > ~/.config/webswr/allowed_signers
+chmod 644 ~/.config/webswr/allowed_signers
+cat ~/.config/webswr/allowed_signers
+```
 
-1. Set up signing as above, and make sure your next commit is signed
-   (`git log --show-signature -1`).
-2. Push it. The update script already installed on the server has no gate yet,
-   so the nightly run deploys it as usual.
-3. On the server, create the trust list, then re-run `./deploy/install.sh` from
-   the updated checkout to install the new update script.
-4. Run the updater once by hand and look for a `signed-commit gate:` line in
-   `update.log`.
+`cat` should print exactly one line, starting `webswr-signer namespaces="git"
+ssh-ed25519`. To trust more than one signer, add one line per key with `>>`
+(`echo '…' >> ~/.config/webswr/allowed_signers`); a second `>` would replace
+the list rather than add to it. Deploying
+commits that someone else signs (the upstream repo rather than your own fork,
+say) means listing *their* public key; deploying from a fork whose commits you
+sign yourself keeps you in control of who can deploy.
 
-**Deploying a commit you didn't sign on purpose** (a GitHub web edit, a merged
-pull request): inspect it, then move the checkout past it by hand. Later runs
-only verify commits after that point.
+### 4. Check the list against the checkout (server)
+
+This asks git whether the commit currently checked out passes, using the same
+list the update script will use:
+
+```sh
+git -C ~/webswr/Trimor -c gpg.ssh.allowedSignersFile="$HOME/.config/webswr/allowed_signers" verify-commit HEAD
+```
+
+| You see | Meaning |
+|---|---|
+| `Good "git" signature for webswr-signer with ED25519 key …` | Everything matches. |
+| `Good "git" signature with ED25519 key …` then `No principal matched.` | The commit is signed, but by a key that isn't in your list. Redo steps 2 and 3. |
+| No output at all | The commit is not signed. |
+
+The paths above are the standard layout. If yours differs, `systemctl --user
+cat webswr-update.service | grep WEBSWR_BASE` shows your webroot (`%h` means
+your home directory), and the checkout is the `CHECKOUT_DIR` named in its
+`config.webswr`.
+
+### 5. Turn the gate on
+
+**An existing deployment**, where the update script installed on the server
+predates the gate:
+
+1. Push a signed commit that contains this version. The installed script has no
+   gate yet, so the nightly run deploys it as usual (or start one now with
+   `systemctl --user start webswr-update.service`). Once
+   `git -C ~/webswr/Trimor log -1 --oneline` shows that commit, it has arrived.
+2. Do steps 3 and 4 on the server. If step 4 prints nothing, that commit was
+   made before signing was set up. That is harmless here, since commits already
+   on the server are never rechecked, but make sure your next one is signed.
+3. Install the new update script, and confirm it is the one in place (any
+   number above 0 means it is):
+
+   ```sh
+   ~/webswr/Trimor/deploy/install.sh --yes
+   grep -c 'signed-commit gate' ~/.local/bin/webswr-update.sh
+   ```
+
+4. Run it once and read the result:
+
+   ```sh
+   systemctl --user start webswr-update.service
+   grep -E 'signed-commit gate|FATAL|=== OK|ABORTED' ~/webswr/update.log | tail -3
+   ```
+
+   You want `signed-commit gate: no new commits; staying at …` followed by
+   `=== OK`. "No new commits" is correct: the commit you pushed was deployed in
+   step 1. From your next push on, the line reads `1 new commit(s), all signed
+   by a trusted key`.
+
+**A fresh install:** follow [Install](#install), and do steps 3 and 4 before the
+updater's first run. Step 4 is not optional here. The gate takes whatever is
+already checked out as its starting point and verifies every commit after it,
+so the clone you made by hand must show `Good "git" signature for …` before it
+is ever deployed.
+
+**The Docker `update.sh`** runs from the checkout, so its gate goes live on the
+first run after it pulls this version, with no install step. Do steps 3 and 4
+as root before that run.
+
+### If a run says FATAL
+
+The run stops and the site keeps serving the last build that passed. The
+`FATAL` line in `update.log` says why:
+
+| Message | Fix |
+|---|---|
+| `no trusted-signer list at …` | The file isn't in this account's home: the wrong account, or a typo in the path. |
+| `belongs to another user` or `is writable by other users` | Recreate the list as the account that runs the stack (step 3, without `sudo`). |
+| `git X.Y cannot verify SSH commit signatures` | The server's git is older than 2.34. Upgrade it. |
+| `ssh-keygen (OpenSSH) is required` | Install the OpenSSH client package. |
+| `commit … is not signed` | That commit was made without signing (step 1), or in GitHub's web editor. |
+| `commit … is signed by a key that is not in …` | Signed, but not by a listed key. Check the line from step 2, or whose commit it is. |
+| `upstream no longer contains the deployed commit` | The history was rewritten (a force-push). Find out why before deploying anything. |
+
+### Deploying a commit you didn't sign, on purpose
+
+A GitHub web edit or a merged pull request isn't signed by your key. Inspect it,
+then move the checkout past it by hand; later runs only verify commits after
+that point.
 
 ```sh
 cd ~/webswr/Trimor && git fetch && git log -p HEAD..@{u}   # read what you are accepting

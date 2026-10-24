@@ -265,11 +265,16 @@ Next steps (rootless, run as this user):
   2. Let the services run without an active login session:
        loginctl enable-linger "\$USER"
 
-  3. List the key(s) allowed to deploy. The updater refuses any commit that is
-     not signed by one of them (see "Signed commits" in deploy/README.md):
+  3. List the key(s) allowed to deploy, then check the checkout against them.
+     The updater refuses any commit not signed by a listed key; "Signed
+     commits" in deploy/README.md shows how to build the line from your key:
        mkdir -p ~/.config/webswr && chmod 700 ~/.config/webswr
-       printf '%s\\n' 'you@example.com namespaces="git" ssh-ed25519 AAAA...' \\
+       echo 'webswr-signer namespaces="git" ssh-ed25519 AAAA...' \\
          > ~/.config/webswr/allowed_signers
+       git -C "$BASE_DIR/$CHECKOUT_DIR" \\
+         -c gpg.ssh.allowedSignersFile="$HOME/.config/webswr/allowed_signers" \\
+         verify-commit HEAD
+     That last command must print: Good "git" signature for webswr-signer ...
 
   4. Assemble the webroot, fetch data, build and start everything:
        systemctl --user start webswr-update.service

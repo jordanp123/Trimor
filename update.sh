@@ -117,7 +117,7 @@ check_signers() {
     echo "FATAL: no trusted-signer list at $f -- refusing to deploy." >&2
     echo "  Every deployed commit must be signed by a key listed there. Add one line per" >&2
     echo "  signer, built from the PUBLIC half of the key that signs your commits:" >&2
-    echo "    you@example.com namespaces=\"git\" ssh-ed25519 AAAA..." >&2
+    echo "    webswr-signer namespaces=\"git\" ssh-ed25519 AAAA..." >&2
     echo "  See \"Signed commits\" in deploy/README.md." >&2
     return 1
   fi
