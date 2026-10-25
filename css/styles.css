@@ -181,6 +181,29 @@ details.advanced, .group details { margin-top: 4px; }
 details > summary { cursor: pointer; color: var(--accent); font-size: 13px; padding: 4px 0; user-select: none; }
 .group > details > summary { color: var(--ink); }
 details > summary::-webkit-details-marker { color: var(--ink-soft); }
+/* A fold's summary line: what is set inside it, readable while it is closed. */
+.fold-sum { color: var(--ink-soft); font-size: 12px; font-weight: 400; margin-left: 6px; }
+.fold-sum:not(.fold-line):not(:empty)::before { content: "· "; }
+.fold-line { display: block; margin: 3px 0 0 18px; line-height: 1.4; }
+.fold-line:empty { display: none; }
+h3.fold-sub { font-size: 13px; margin: 14px 0 2px; }
+/* Info toggles: a small circled "i" beside a label opens the explanation below
+   it. A .lab row stands in for a field's bare <label>, so it carries the same
+   type and spacing. */
+.lab { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+.lab > label:not(.checkline) { font-size: 12.5px; color: var(--ink-soft); }
+.lab > p, .lab > h3 { margin: 0; }
+.lab.sub-head { margin: 14px 0 2px; }
+button.info {
+  flex: none; width: 16px; height: 16px; padding: 0; border-radius: 50%;
+  font: italic 600 10px/14px Georgia, "Times New Roman", serif; color: var(--ink-soft);
+  background: transparent; border: 1px solid var(--line-strong);
+}
+button.info:hover, button.info[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); }
+.hint.info-text { margin: 4px 0 8px; line-height: 1.45; }
+/* "Plan for two" sits beside Sex, level with the select rather than its label. */
+.partner-cell { display: flex; align-items: flex-end; }
+.partner-cell .partner-toggle { margin: 0 0 11px; }
 .rows { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
 /* 7 columns inside a panel that maxes out at 430px: the fixed columns stay as
    slim as their content allows and the flexible ones (type / amount / note)
@@ -227,14 +250,27 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ghost { background: transparent; color: var(--ink-soft); border-color: var(--line-strong); padding: 8px 11px; }
 .ghost:hover { color: var(--ink); border-color: var(--accent); }
 /* The solver buttons are red so they clearly read as a clickable action. */
-#solveBtn, #gsolveBtn { background: var(--bad); color: #fff; border-color: var(--bad); font-weight: 600; }
-#solveBtn:hover, #gsolveBtn:hover { filter: brightness(1.07); }
 #themeBtn { width: 36px; height: 34px; padding: 0; font-size: 16px; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-top: 16px; }
 .actions .primary { flex: 1 1 100%; }
 .solver { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
 .solver-tail { color: var(--ink-soft); font-size: 13px; }
 .util { display: flex; gap: 6px; margin-left: auto; }
+/* Run stays reachable: pinned to the bottom of the scrolling input panel (or of
+   the screen, once the panel stops scrolling on its own), settling back into
+   place at the end of the form. The validation message rides with it, so an
+   error is never out of sight of the button that raised it. */
+.runbar {
+  position: sticky; bottom: 0; z-index: 2;
+  margin: 16px -18px 0; padding: 12px 18px;
+  background: var(--panel); border-top: 1px solid var(--line);
+}
+.runbar .primary { width: 100%; }
+.runbar .formmsg { margin: 8px 0 0; min-height: 0; }
+.runbar .formmsg:empty { margin: 0; }
+details.tool { margin-top: 6px; }
+details.tool .solver { padding: 6px 0 4px; }
+.inputs > .util { justify-content: flex-end; margin-top: 10px; }
 .add { width: 100%; }
 .formmsg { margin: 10px 0 0; font-size: 13px; min-height: 18px; color: var(--bad); }
 .formmsg.ok { color: var(--good); }
@@ -365,6 +401,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .topbar .tagline { display: none; }
   .layout { padding: 12px; gap: 12px; }
   .inputs { padding-left: 14px; padding-right: 14px; }
+  .runbar { margin-left: -14px; margin-right: -14px; padding-left: 14px; padding-right: 14px; }
   .results { padding: 14px; }
   .solver, .actions { gap: 8px; }
 }

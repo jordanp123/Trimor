@@ -255,7 +255,7 @@
     const iv = num("initialValue", 0);
     if (!(iv > 0) || !isFinite(iv) || iv > MAX_PORTFOLIO) return "Enter a starting portfolio between $1 and $10 trillion.";
     const y = Math.round(num("years", 0));
-    if (y < 1 || y > DATA.years.length) return "Retirement length must be between 1 and " + DATA.years.length + " years.";
+    if (y < 1 || y > DATA.years.length) return "Retirement years must be between 1 and " + DATA.years.length + ".";
     // A floor above the ceiling is a contradiction: the engine applies the
     // floor first, so the ceiling would silently win every year and the floor
     // would never bind. Refuse to run rather than quietly invert the request.
@@ -420,6 +420,7 @@
         const h = container.querySelector(".flowhead");
         if (h) h.remove();
       }
+      syncSummaries(); // a removal fires no input event, and the fold's count must drop
     });
     [first, amt, start, end, cola, note, rm].forEach((c) => row.appendChild(c));
     ensureFlowHeader(container, kindSelectable);
@@ -481,19 +482,19 @@
   function syncSsCut() {
     const on = $("ssCutOn").checked;
     $("ssCutFields").hidden = !on;
+    // Status and warnings only: the background (Trustees projection, who it
+    // applies to) is static text behind the ssCutInfo toggle.
     if (!on) {
-      $("ssCutHint").textContent = "Social Security rows are paid in full every year. Current law " +
-        "cuts them once the retirement trust fund runs out (projected late 2032, then 78% of " +
-        "scheduled benefits), so this is the optimistic choice — keep it only if you are confident " +
-        "Congress will close the gap.";
+      $("ssCutHint").textContent = "Social Security rows are paid in full every year: the optimistic " +
+        "choice, since current law cuts them once the retirement trust fund runs out (projected late " +
+        "2032, then 78% of scheduled benefits).";
       return;
     }
     const pct = Math.round(num("ssCutPct", 78)), yr = Math.round(num("ssCutYear", 2032));
     const py = planYear(), ry = Math.max(1, yr - py + 1);
-    $("ssCutHint").textContent = "Current law: the 2026 Social Security Trustees Report projects the " +
-      "retirement trust fund running out in late 2032, after which benefits fall to the 78% that " +
-      "payroll taxes can fund. This plan pays " + pct + "% from " + yr + " — retirement year " + ry +
-      ", since it starts in " + py + " — on every Soc. Sec. row, including benefits claimed later." +
+    $("ssCutHint").textContent = "This plan pays " + pct + "% of scheduled benefits from " + yr +
+      " — retirement year " + ry + ", since it starts in " + py +
+      " — on every Soc. Sec. row, including benefits claimed later." +
       (py < THIS_YEAR ? " Note: " + py + " is before this year, so the cut lands later in your retirement " +
         "than it would for a plan starting now — the optimistic direction. Change it to " + THIS_YEAR +
         " to plan from today." : "");
@@ -524,8 +525,98 @@
     const m = $("mcMethod").value;
     $("mcBlockWrap").hidden = m !== "block";
     $("mcVarBlockWrap").hidden = m !== "varblock";
-    $("mcVarBlockHint").hidden = m !== "varblock";
+    // Its info toggle owns showing it; switching method may only put it away.
+    if (m !== "varblock") { $("mcVarBlockHint").hidden = true; $("mcBlockInfoBtn").setAttribute("aria-expanded", "false"); }
   };
+
+  // ---------- info toggles ----------
+  // Explanations sit behind a small "i" beside their field. Warnings and live
+  // status lines never do -- ssCutHint, mcTrialsCap, fixedInflationHint,
+  // spendRateHint and capeRateNow stay on screen (tests/info_parity.py holds
+  // that line). Wired by id, so the headless suite exercises every pair.
+  const INFO = [
+    ["longevityInfoBtn", "longevityInfo"], ["partnerInfoBtn", "partnerInfo"], ["taxInfoBtn", "taxInfo"],
+    ["freqInfoBtn", "withdrawFreqHint"], ["capeInfoBtn", "capeInfo"], ["gsolveInfoBtn", "gsolveInfo"],
+    ["incomeInfoBtn", "incomeInfo"], ["ssCutInfoBtn", "ssCutInfo"], ["adjustInfoBtn", "adjustInfo"],
+    ["adjInfoBtn", "adjInfo"], ["mcBlockInfoBtn", "mcVarBlockHint"], ["seedInfoBtn", "seedInfo"],
+  ];
+  function wireInfo() {
+    INFO.forEach(([b, h]) => $(b).addEventListener("click", () => {
+      const show = $(h).hidden;
+      $(h).hidden = !show;
+      $(b).setAttribute("aria-expanded", String(show));
+    }));
+  }
+
+  // ---------- folded sections ----------
+  // A fold may hide inputs, never their effect: its summary line says what is
+  // set inside it, and a fold holding a non-default value opens when the page
+  // loads (a share link can set anything), so no result ever depends on a
+  // setting nobody can see.
+  const MORE_ASSETS = ["allocGold", "allocCash", "allocCorp", "allocReit", "allocSmallcap"];
+  function syncMoreAssets() {
+    $("sumMoreAssets").textContent = MORE_ASSETS.filter((id) => num(id, 0) !== 0)
+      .map((id) => ADJ_LABEL[ALLOC[id]] + " " + num(id, 0) + "%").join(" · ");
+  }
+  // The persisted fields inside each fold. mcSeed stays out: it is re-rolled on
+  // every load, so it always differs from the snapshot and says nothing.
+  const FOLD_FIELDS = {
+    foldIncome: ["ssCutOn", "ssCutPct", "ssCutYear", "planYear"],
+    foldAssumptions: ["feeRate", "taxRate", "inflationMode", "fixedInflation", "longevity"].concat(Object.keys(ADJ)),
+    foldMc: ["runMonteCarlo", "mcMethod", "mcTrials", "mcBlock", "mcBlockMin", "mcBlockMax"],
+    foldSolve: ["targetSuccess"],
+  };
+  const flowCount = () => readFlows("incomeRows", "income").length + readFlows("adjustRows", null).length;
+  const adjSet = () => Object.keys(ADJ).filter((id) => num(id, 0) !== 0);
+  const round1 = (x) => Math.round(x * 10) / 10;
+  // Once per page load, after any share link has been applied.
+  function openFoldsWithSettings() {
+    if (MORE_ASSETS.some((id) => num(id, 0) !== 0)) $("moreAssets").open = true;
+    Object.keys(FOLD_FIELDS).forEach((fold) => {
+      if (FOLD_FIELDS[fold].some((id) => persistVal($(id)) !== DEFAULT_STATE[id])) $(fold).open = true;
+    });
+    if (flowCount()) $("foldIncome").open = true;
+    if (adjSet().length) $("adjBox").open = true;
+  }
+  // Each closed fold's one-line account of what it holds. Optimistic choices are
+  // named as such, as they are in the hints inside.
+  function syncSummaries() {
+    syncMoreAssets();
+    const nInc = readFlows("incomeRows", "income").length, nAdj = readFlows("adjustRows", null).length;
+    const inc = [nInc ? nInc + (nInc === 1 ? " income" : " incomes") : "No income added",
+      nAdj ? nAdj + (nAdj === 1 ? " extra expense or income" : " extra expenses or incomes") : "no extra expenses"];
+    if ($("ssCutOn").checked) {
+      inc.push("Social Security cut to " + Math.round(num("ssCutPct", 78)) + "% from " + Math.round(num("ssCutYear", 2032)));
+      const py = planYear();
+      if (py !== THIS_YEAR) inc.push("plan starts in " + py + (py < THIS_YEAR ? ", before this year (optimistic)" : ""));
+    } else {
+      inc.push("no Social Security cut (optimistic)");
+    }
+    $("sumIncome").textContent = inc.join(" · ");
+    const k = longevitySetback(), adj = adjSet();
+    $("sumAssumptions").textContent = [
+      "Fees " + num("feeRate", 0).toFixed(2) + "%",
+      "tax " + round1(num("taxRate", 0)) + "%",
+      $("inflationMode").value === "fixed" ? "fixed " + round1(num("fixedInflation", 3)) + "% inflation" : "historical inflation",
+      k ? "life table " + k + " years younger" : "life table as published",
+      adj.length ? "returns adjusted: " + adj.map((id) => {
+        const v = num(id, 0);
+        return ADJ_LABEL[ADJ[id]] + " " + (v < 0 ? "−" : "+") + Math.round(Math.abs(v) * 100) / 100 + "%/yr";
+      }).join(", ") : "no return adjustments",
+    ].join(" · ");
+    let mc = "Off";
+    if ($("runMonteCarlo").checked) {
+      const m = $("mcMethod").value;
+      mc = "On · " + (m === "bootstrap" ? "single years (bootstrap)"
+        : m === "block" ? "fixed " + Math.round(num("mcBlock", 5)) + "-year streaks"
+        : m === "parametric" ? "parametric (normal)"
+        : "variable streaks " + blockLo() + "–" + blockHi() + " years") +
+        " · " + clampTrials().toLocaleString("en-US") + " trials";
+    }
+    $("sumMc").textContent = mc;
+    $("sumSolve").textContent = "target " + round1(num("targetSuccess", 95)) + "% · " +
+      (state.solveBasis === "montecarlo" ? "Monte Carlo" : "historical");
+  }
 
   // ---------- running ----------
   function run(ev, opts) {
@@ -1896,6 +1987,11 @@
   // ---------- wiring ----------
   function wire() {
     $("inputs").addEventListener("submit", run);
+    // Every field's input/change bubbles to the form, so one pair of listeners
+    // keeps every fold's summary current, including rows added later.
+    $("inputs").addEventListener("input", syncSummaries);
+    $("inputs").addEventListener("change", syncSummaries);
+    wireInfo();
     $("strategy").addEventListener("change", syncStrategy);
     $("initialValue").addEventListener("input", syncStrategy);
     $("initialSpend").addEventListener("input", syncStrategy);
@@ -1918,7 +2014,7 @@
     ["ssCutOn", "ssCutPct", "ssCutYear", "planYear"].forEach((id) =>
       $(id).addEventListener(id === "ssCutOn" ? "change" : "input", syncSsCut));
     MONEY_IDS.forEach((id) => attachMoney($(id)));
-    Object.keys(ALLOC).forEach((id) => $(id).addEventListener("input", updateAllocSum));
+    Object.keys(ALLOC).forEach((id) => $(id).addEventListener("input", () => { updateAllocSum(); syncMoreAssets(); }));
     $("inflationMode").addEventListener("change", toggleFixed);
     $("runMonteCarlo").addEventListener("change", toggleMcOptions);
     $("mcMethod").addEventListener("change", toggleMcBlock);
@@ -1982,6 +2078,7 @@
       b.addEventListener("click", () => {
         state.solveBasis = b.dataset.basis;
         $("solveBasis").querySelectorAll("button").forEach((x) => x.classList.toggle("seg-on", x === b));
+        syncSummaries(); // a segment click fires no input event
       }));
     let rt;
     window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(redrawCharts, 150); });
@@ -2007,6 +2104,7 @@
     state.adj = adjParts(); renderAdjNote();
     $("partnerFields").hidden = !$("partnerOn").checked;
     syncStrategy(); syncFreq(); syncSsCut(); updateAllocSum(); toggleFixed(); toggleMcOptions(); toggleMcBlock();
+    openFoldsWithSettings(); syncSummaries();
     run(null, { fromLink });
   }
 
@@ -2019,6 +2117,8 @@
   SWR.ui = {
     renderDataHealth,
     __runForTest: (fromLink) => run(null, { fromLink: !!fromLink }),
+    __openFolds: () => openFoldsWithSettings(),
+    __info: () => INFO.map((pair) => pair.slice()),
     __mcPending: () => !!state.mcStarted,
     __ybyCsvText: (tr, age) => ybyCsvText(tr, age),
     __csvCell: (v, dp) => csvCell(v, dp),

@@ -70,73 +70,23 @@
     <!-- ============================== INPUTS ============================== -->
     <form id="inputs" class="panel inputs" autocomplete="off" novalidate>
       <section class="group">
-        <h2>Portfolio &amp; time</h2>
+        <h2>Your plan</h2>
         <div class="field">
           <label for="initialValue">Current portfolio</label>
           <div class="prefixed"><span>$</span><input id="initialValue" type="text" inputmode="numeric" autocomplete="off" value="1000000" /></div>
         </div>
-        <div class="row2">
-          <div class="field">
-            <label for="years">Retirement length (years)</label>
-            <input id="years" type="number" min="1" max="98" step="1" value="30" />
-          </div>
-          <div class="field">
-            <label for="feeRate">Annual fees <span class="hint">expense ratio</span></label>
-            <div class="suffixed"><input id="feeRate" type="number" min="0" max="5" step="0.01" value="0.10" /><span>%</span></div>
-          </div>
-        </div>
-        <div class="row2">
-          <div class="field">
-            <label for="currentAge">Your age now <span class="hint">for longevity</span></label>
-            <input id="currentAge" type="number" min="18" max="110" step="1" value="65" />
-          </div>
-          <div class="field">
-            <label for="sex">Sex <span class="hint">SSA life table</span></label>
-            <select id="sex">
-              <option value="male">Male</option>
-              <option value="female">Female</option>
-              <option value="blended">Average</option>
-            </select>
-          </div>
-        </div>
-        <div class="field">
-          <label for="longevity">Longevity <span class="hint">life-table adjustment</span></label>
-          <select id="longevity">
-            <option value="0">SSA table as published</option>
-            <option value="2" selected>2 years younger (default)</option>
-            <option value="4">4 years younger: above-average income or health</option>
-            <option value="6">6 years younger: well above average</option>
-          </select>
-          <p class="hint">Reads the SSA life table as if you were younger, because it understates how long people live: it freezes today's death rates, and higher earners outlive the average. 2 years roughly matches the Trustees' cohort table for someone retiring now. Applies to a partner too.</p>
-        </div>
-        <label class="checkline partner-toggle"><input id="partnerOn" type="checkbox" /> Planning for two — the money must last until the second death</label>
-        <div class="row2" id="partnerFields" hidden>
-          <div class="field">
-            <label for="partnerAge">Partner's age now</label>
-            <input id="partnerAge" type="number" min="18" max="110" step="1" value="65" />
-          </div>
-          <div class="field">
-            <label for="partnerSex">Partner's sex <span class="hint">SSA life table</span></label>
-            <select id="partnerSex">
-              <option value="female">Female</option>
-              <option value="male">Male</option>
-              <option value="blended">Average</option>
-            </select>
-          </div>
-        </div>
-
         <fieldset class="alloc">
           <legend>Asset allocation <span id="allocSum" class="alloc-sum">100%</span></legend>
           <div class="row2">
             <div class="field"><label for="allocStocks">Stocks (S&amp;P 500)</label><div class="suffixed"><input id="allocStocks" class="alloc-input" type="number" min="0" max="100" step="1" value="75" /><span>%</span></div></div>
             <div class="field"><label for="allocBonds">Bonds (10-yr Treasury)</label><div class="suffixed"><input id="allocBonds" class="alloc-input" type="number" min="0" max="100" step="1" value="25" /><span>%</span></div></div>
           </div>
-          <div class="row2">
-            <div class="field"><label for="allocGold">Gold</label><div class="suffixed"><input id="allocGold" class="alloc-input" type="number" min="0" max="100" step="1" value="0" /><span>%</span></div></div>
-            <div class="field"><label for="allocCash">Cash (3-mo T-Bill)</label><div class="suffixed"><input id="allocCash" class="alloc-input" type="number" min="0" max="100" step="1" value="0" /><span>%</span></div></div>
-          </div>
-          <details class="advanced">
-            <summary>More asset classes</summary>
+          <details class="advanced" id="moreAssets">
+            <summary>More asset classes <span id="sumMoreAssets" class="fold-sum"></span></summary>
+            <div class="row2">
+              <div class="field"><label for="allocGold">Gold</label><div class="suffixed"><input id="allocGold" class="alloc-input" type="number" min="0" max="100" step="1" value="0" /><span>%</span></div></div>
+              <div class="field"><label for="allocCash">Cash (3-mo T-Bill)</label><div class="suffixed"><input id="allocCash" class="alloc-input" type="number" min="0" max="100" step="1" value="0" /><span>%</span></div></div>
+            </div>
             <div class="row2">
               <div class="field"><label for="allocCorp">Corporate bonds (Baa)</label><div class="suffixed"><input id="allocCorp" class="alloc-input" type="number" min="0" max="100" step="1" value="0" /><span>%</span></div></div>
               <div class="field"><label for="allocReit">Real estate</label><div class="suffixed"><input id="allocReit" class="alloc-input" type="number" min="0" max="100" step="1" value="0" /><span>%</span></div></div>
@@ -146,31 +96,49 @@
               <div class="field"></div>
             </div>
           </details>
-          <details class="advanced" id="adjBox">
-            <summary>Return adjustments <span id="adjBadge" class="adj-badge" hidden></span></summary>
-            <p class="hint">Shift an asset class's return by a fixed amount every year — a <em>haircut</em> if negative. Use it to ask what happens if history was too generous: high starting valuations argue for lower equity returns, and today's yields may differ from the historical average. The offset is applied to each year's return, so a &minus;0.25%/yr haircut lowers the nominal return by exactly 0.25 points and the real return by a touch less (about 0.24 at 3% inflation, since returns are deflated geometrically). Left at 0, history is used exactly as recorded. An offset only counts for an asset this portfolio holds — except <em>Cash</em>, which also moves the rate on the monthly withdrawal bucket, since that money sits in the same 3-month T-bills.</p>
-            <div class="row2">
-              <div class="field"><label for="adjStocks">Stocks</label><div class="suffixed"><input id="adjStocks" class="adj-input" type="number" min="-5" max="5" step="0.05" value="0" /><span>%/yr</span></div></div>
-              <div class="field"><label for="adjBonds">Bonds</label><div class="suffixed"><input id="adjBonds" class="adj-input" type="number" min="-5" max="5" step="0.05" value="0" /><span>%/yr</span></div></div>
-            </div>
-            <div class="row2">
-              <div class="field"><label for="adjGold">Gold</label><div class="suffixed"><input id="adjGold" class="adj-input" type="number" min="-5" max="5" step="0.05" value="0" /><span>%/yr</span></div></div>
-              <div class="field"><label for="adjCash">Cash</label><div class="suffixed"><input id="adjCash" class="adj-input" type="number" min="-5" max="5" step="0.05" value="0" /><span>%/yr</span></div></div>
-            </div>
-            <div class="row2">
-              <div class="field"><label for="adjCorp">Corporate bonds</label><div class="suffixed"><input id="adjCorp" class="adj-input" type="number" min="-5" max="5" step="0.05" value="0" /><span>%/yr</span></div></div>
-              <div class="field"><label for="adjReit">Real estate</label><div class="suffixed"><input id="adjReit" class="adj-input" type="number" min="-5" max="5" step="0.05" value="0" /><span>%/yr</span></div></div>
-            </div>
-            <div class="row2">
-              <div class="field"><label for="adjSmallcap">US small cap</label><div class="suffixed"><input id="adjSmallcap" class="adj-input" type="number" min="-5" max="5" step="0.05" value="0" /><span>%/yr</span></div></div>
-              <div class="field"></div>
-            </div>
-          </details>
         </fieldset>
+        <div class="row2">
+          <div class="field">
+            <label for="years">Retirement years</label>
+            <input id="years" type="number" min="1" max="98" step="1" value="30" />
+          </div>
+          <div class="field">
+            <label for="currentAge">Age</label>
+            <input id="currentAge" type="number" min="18" max="110" step="1" value="65" />
+          </div>
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label for="sex">Sex</label>
+            <select id="sex">
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="blended">Average</option>
+            </select>
+          </div>
+          <div class="field partner-cell">
+            <div class="lab partner-toggle"><label class="checkline"><input id="partnerOn" type="checkbox" /> Plan for two</label><button type="button" class="info" id="partnerInfoBtn" aria-controls="partnerInfo" aria-expanded="false" aria-label="About planning for two">i</button></div>
+          </div>
+        </div>
+        <p class="hint info-text" id="partnerInfo" hidden>A couple\'s money has to last until the second death, which is usually much later than either life expectancy alone. Tick it to enter your partner\'s age and sex; the mortality chart then shows the chance that at least one of you is still alive.</p>
+        <div class="row2" id="partnerFields" hidden>
+          <div class="field">
+            <label for="partnerAge">Partner's age</label>
+            <input id="partnerAge" type="number" min="18" max="110" step="1" value="65" />
+          </div>
+          <div class="field">
+            <label for="partnerSex">Partner's sex</label>
+            <select id="partnerSex">
+              <option value="female">Female</option>
+              <option value="male">Male</option>
+              <option value="blended">Average</option>
+            </select>
+          </div>
+        </div>
       </section>
 
       <section class="group">
-        <h2>Spending plan</h2>
+        <h2>Spending</h2>
         <div class="field">
           <label for="strategy">Withdrawal strategy</label>
           <select id="strategy">
@@ -192,33 +160,33 @@
           <div class="suffixed"><input id="spendPercent" type="number" min="0" max="20" step="0.1" value="4" /><span>%</span></div>
         </div>
         <div class="field strat strat-percent">
-          <label>Withdrawal frequency <span class="hint">how the year's spending is paid out</span></label>
+          <div class="lab"><label>Withdrawal frequency</label><button type="button" class="info" id="freqInfoBtn" aria-controls="withdrawFreqHint" aria-expanded="false" aria-label="About withdrawal frequency">i</button></div>
           <div class="seg" id="withdrawFreq" role="tablist">
             <button type="button" data-freq="annual" class="seg-on">Annual</button>
             <button type="button" data-freq="monthly">Monthly</button>
           </div>
           <input type="hidden" id="withdrawFreqVal" value="annual" />
-          <p class="hint" id="withdrawFreqHint"></p>
+          <p class="hint info-text" id="withdrawFreqHint" hidden></p>
         </div>
         <div class="field strat strat-vpw">
-          <label for="vpwReturn">Assumed real return <span class="hint">amortization rate</span></label>
+          <label for="vpwReturn">Assumed real return</label>
           <div class="suffixed"><input id="vpwReturn" type="number" min="0" max="10" step="0.1" value="3.4" /><span>%</span></div>
         </div>
         <div class="row2 strat strat-cape">
-          <div class="field"><label for="capeA">Base rate <span class="hint">a — intercept</span></label><div class="suffixed"><input id="capeA" type="number" min="0" max="10" step="0.05" value="1.75" /><span>%</span></div></div>
-          <div class="field"><label for="capeB">Earnings-yield weight <span class="hint">b × (1/CAPE)</span></label><input id="capeB" type="number" min="0" max="2" step="0.05" value="0.5" /></div>
+          <div class="field"><label for="capeA">Base rate (a)</label><div class="suffixed"><input id="capeA" type="number" min="0" max="10" step="0.05" value="1.75" /><span>%</span></div></div>
+          <div class="field"><label for="capeB">Earnings-yield weight (b)</label><input id="capeB" type="number" min="0" max="2" step="0.05" value="0.5" /></div>
         </div>
         <div class="field strat strat-cape capebox">
-          <p class="hint" id="capeRateNow"></p>
-          <p class="hint">The current CAPE updates automatically each day on the server; nothing is fetched in your browser. Historical backtests use each start year's <em>own</em> CAPE, so backtested spending will differ from this today's-CAPE readout.</p>
+          <div class="lab"><p class="hint" id="capeRateNow"></p><button type="button" class="info" id="capeInfoBtn" aria-controls="capeInfo" aria-expanded="false" aria-label="About the CAPE readout">i</button></div>
+          <p class="hint info-text" id="capeInfo" hidden>The current CAPE updates automatically each day on the server; nothing is fetched in your browser. Historical backtests use each start year's <em>own</em> CAPE, so backtested spending will differ from this today's-CAPE readout.</p>
         </div>
         <div class="row2 strat strat-guyton">
           <div class="field"><label for="gkGuard">Guardrail band</label><div class="suffixed"><input id="gkGuard" type="number" min="5" max="50" step="1" value="20" /><span>%</span></div></div>
           <div class="field"><label for="gkAdjust">Spending cut/raise</label><div class="suffixed"><input id="gkAdjust" type="number" min="1" max="25" step="1" value="10" /><span>%</span></div></div>
         </div>
         <div class="row2 strat strat-percent strat-vpw strat-cape">
-          <div class="field"><label for="spendFloor">Spending floor <span class="hint">today's $, optional</span></label><div class="prefixed"><span>$</span><input id="spendFloor" type="text" inputmode="numeric" autocomplete="off" value="" /></div></div>
-          <div class="field"><label for="spendCeiling">Spending ceiling <span class="hint">today's $, optional</span></label><div class="prefixed"><span>$</span><input id="spendCeiling" type="text" inputmode="numeric" autocomplete="off" value="" /></div></div>
+          <div class="field"><label for="spendFloor">Spending floor</label><div class="prefixed"><span>$</span><input id="spendFloor" type="text" inputmode="numeric" autocomplete="off" value="" placeholder="optional" /></div></div>
+          <div class="field"><label for="spendCeiling">Spending ceiling</label><div class="prefixed"><span>$</span><input id="spendCeiling" type="text" inputmode="numeric" autocomplete="off" value="" placeholder="optional" /></div></div>
         </div>
         <div class="field strat strat-percent guardbox">
           <div class="solver">
@@ -229,95 +197,144 @@
               <button type="button" data-basis="historical" class="seg-on">Historical</button>
               <button type="button" data-basis="montecarlo">Monte Carlo</button>
             </div>
+            <button type="button" class="info" id="gsolveInfoBtn" aria-controls="gsolveInfo" aria-expanded="false" aria-label="About solving the blank guardrail">i</button>
           </div>
-          <p class="hint">Fill in <strong>one</strong> of the floor/ceiling above and leave the other blank — I'll work back the blank one so a percentage-of-portfolio plan hits this success rate. (Floor blank → I solve the highest safe floor; ceiling blank → the highest cap you can afford.)</p>
+          <p class="hint info-text" id="gsolveInfo" hidden>Fill in <strong>one</strong> of the floor/ceiling above and leave the other blank — I'll work back the blank one so a percentage-of-portfolio plan hits this success rate. (Floor blank → I solve the highest safe floor; ceiling blank → the highest cap you can afford.)</p>
           <div id="gsolveResult" class="solve-result" role="status" hidden></div>
         </div>
-
-        <div class="row2">
-          <div class="field">
-            <label for="inflationMode">Inflation</label>
-            <select id="inflationMode">
-              <option value="cpi">Historical CPI</option>
-              <option value="fixed">Fixed rate</option>
-            </select>
-          </div>
-          <div class="field" id="fixedInflationWrap" hidden>
-            <label for="fixedInflation">Fixed inflation</label>
-            <div class="suffixed"><input id="fixedInflation" type="number" min="0" max="20" step="0.1" value="3" /><span>%</span></div>
-          </div>
-          <div class="field">
-            <label for="taxRate">Effective tax rate <span class="hint">simplified</span></label>
-            <div class="suffixed"><input id="taxRate" type="number" min="0" max="60" step="1" value="0" /><span>%</span></div>
-          </div>
-        </div>
-        <p class="hint" id="fixedInflationHint" hidden>What-if lever: returns stay historical (nominal); only the inflation applied to your spending changes. Results are no longer a self-consistent replay of history — e.g. the 1970s get easier while the deflationary 1930s get harder.</p>
       </section>
 
       <section class="group">
-        <details>
-          <summary><h2 class="inline">Income (Social Security, pensions)</h2></summary>
-          <p class="hint">Money coming in — Social Security, a pension, an annuity. Enter the <strong>gross</strong> annual amount — the figure on your benefit statement — and the retirement years it runs (<strong>year&nbsp;1 = your first year retired</strong>); tick <strong>COLA</strong> if it grows with inflation. <strong>Source</strong> sets the tax: <em>Soc. Sec.</em> and <em>Pension</em> are taxed at your effective rate (taxing all of Social Security slightly overstates it, since at most 85% is taxable — the safe side); choose <em>Tax-free</em> for Roth income or an amount already after tax.</p>
+        <details id="foldIncome">
+          <summary><h2 class="inline">Income and expenses</h2><span id="sumIncome" class="fold-sum fold-line"></span></summary>
+          <div class="lab sub-head"><h3 class="fold-sub">Income (Social Security, pensions)</h3><button type="button" class="info" id="incomeInfoBtn" aria-controls="incomeInfo" aria-expanded="false" aria-label="About income">i</button></div>
+          <p class="hint info-text" id="incomeInfo" hidden>Money coming in — Social Security, a pension, an annuity. Enter the <strong>gross</strong> annual amount — the figure on your benefit statement — and the retirement years it runs (<strong>year&nbsp;1 = your first year retired</strong>); tick <strong>COLA</strong> if it grows with inflation. <strong>Source</strong> sets the tax: <em>Soc. Sec.</em> and <em>Pension</em> are taxed at your effective rate (taxing all of Social Security slightly overstates it, since at most 85% is taxable — the safe side); choose <em>Tax-free</em> for Roth income or an amount already after tax.</p>
           <div id="incomeRows" class="rows"></div>
           <button id="addIncome" class="ghost add" type="button">+ Add income</button>
           <div class="ss-cut">
-            <label class="checkline"><input id="ssCutOn" type="checkbox" checked /> Assume the Social Security cut current law requires</label>
+            <div class="lab"><label class="checkline"><input id="ssCutOn" type="checkbox" checked /> Assume the Social Security cut current law requires</label><button type="button" class="info" id="ssCutInfoBtn" aria-controls="ssCutInfo" aria-expanded="false" aria-label="About the Social Security cut">i</button></div>
+            <p class="hint info-text" id="ssCutInfo" hidden>The 2026 Social Security Trustees Report projects the retirement trust fund running out in late 2032. Under current law, benefits then fall automatically to the 78% that payroll taxes can fund, for everyone, including people already retired and benefits claimed later. Congress may act first, but assuming it will is the optimistic choice: untick only if you are confident it will close the gap.</p>
             <div class="row2" id="ssCutFields">
-              <div class="field"><label for="ssCutPct">Benefits paid <span class="hint">% of scheduled</span></label><div class="suffixed"><input id="ssCutPct" type="number" min="0" max="100" step="1" value="78" /><span>%</span></div></div>
-              <div class="field"><label for="ssCutYear">From <span class="hint">calendar year</span></label><input id="ssCutYear" type="number" min="2000" max="2200" step="1" value="2032" /></div>
+              <div class="field"><label for="ssCutPct">Benefits paid</label><div class="suffixed"><input id="ssCutPct" type="number" min="0" max="100" step="1" value="78" /><span>%</span></div></div>
+              <div class="field"><label for="ssCutYear">From year</label><input id="ssCutYear" type="number" min="2000" max="2200" step="1" value="2032" /></div>
             </div>
             <div class="row2">
-              <div class="field"><label for="planYear">Retirement starts in <span class="hint">calendar year</span></label><input id="planYear" type="number" min="2000" max="2200" step="1" /></div>
+              <div class="field"><label for="planYear">Retirement starts in</label><input id="planYear" type="number" min="2000" max="2200" step="1" /></div>
               <div class="field"></div>
             </div>
-            <p class="hint" id="ssCutHint">The 2026 Social Security Trustees Report projects the retirement trust fund running out in late 2032; under current law benefits then fall to the 78% that payroll taxes can fund. Applied to every <em>Soc. Sec.</em> row from that year on, including benefits claimed later. Untick only if you are confident Congress will close the gap.</p>
+            <p class="hint" id="ssCutHint"></p>
           </div>
-        </details>
-      </section>
-
-      <section class="group">
-        <details>
-          <summary><h2 class="inline">Extra expenses / income (one-time or recurring)</h2></summary>
-          <p class="hint">One-off or recurring changes. Choose <strong>Expense</strong> (e.g. a new roof in year 10), <strong>Income</strong> (e.g. part-time work in years 1–5 — taxed at your effective rate) or <strong>Tax-free</strong> (e.g. an inheritance, which is not federally taxed, or an amount already after tax), then the annual amount, the start/end retirement years, and COLA. <strong>Healthcare and long-term care</strong> are only in the plan if you add them: medical prices have long risen faster than general inflation, and a long-term-care stay can cost more in a year than many retirees spend in total, so consider an Expense row for the later years.</p>
+          <div class="lab sub-head"><h3 class="fold-sub">Extra expenses and income</h3><button type="button" class="info" id="adjustInfoBtn" aria-controls="adjustInfo" aria-expanded="false" aria-label="About extra expenses and income">i</button></div>
+          <p class="hint">Healthcare and long-term care are only in the plan if you add them here.</p>
+          <p class="hint info-text" id="adjustInfo" hidden>One-off or recurring changes. Choose <strong>Expense</strong> (e.g. a new roof in year 10), <strong>Income</strong> (e.g. part-time work in years 1–5 — taxed at your effective rate) or <strong>Tax-free</strong> (e.g. an inheritance, which is not federally taxed, or an amount already after tax), then the annual amount, the start/end retirement years, and COLA. <strong>Healthcare and long-term care</strong> are only in the plan if you add them: medical prices have long risen faster than general inflation, and a long-term-care stay can cost more in a year than many retirees spend in total, so consider an Expense row for the later years.</p>
           <div id="adjustRows" class="rows"></div>
           <button id="addAdjust" class="ghost add" type="button">+ Add adjustment</button>
         </details>
       </section>
 
       <section class="group">
-        <h2>Monte Carlo</h2>
-        <label class="checkline"><input id="runMonteCarlo" type="checkbox" /> Also run a Monte Carlo simulation</label>
-        <div id="mcOptions" class="mc-options" hidden>
+        <details id="foldAssumptions">
+          <summary><h2 class="inline">Assumptions</h2><span id="sumAssumptions" class="fold-sum fold-line"></span></summary>
           <div class="row2">
             <div class="field">
-              <label for="mcMethod">Method</label>
-              <select id="mcMethod">
-                <option value="bootstrap">Bootstrap (resample years)</option>
-                <option value="varblock" selected>Block bootstrap (variable streaks)</option>
-                <option value="block">Block bootstrap (fixed streaks)</option>
-                <option value="parametric">Parametric (normal)</option>
+              <label for="feeRate">Annual fees</label>
+              <div class="suffixed"><input id="feeRate" type="number" min="0" max="5" step="0.01" value="0.10" /><span>%</span></div>
+            </div>
+            <div class="field">
+              <div class="lab"><label for="taxRate">Tax rate</label><button type="button" class="info" id="taxInfoBtn" aria-controls="taxInfo" aria-expanded="false" aria-label="About the tax rate">i</button></div>
+              <div class="suffixed"><input id="taxRate" type="number" min="0" max="60" step="1" value="0" /><span>%</span></div>
+            </div>
+          </div>
+          <p class="hint info-text" id="taxInfo" hidden>One effective rate, applied to every withdrawal and to income marked as taxed (Social Security, pensions and taxed extra income). It is a simplification: real tax depends on brackets, account types and how much of your Social Security is taxable.</p>
+          <div class="row2">
+            <div class="field">
+              <label for="inflationMode">Inflation</label>
+              <select id="inflationMode">
+                <option value="cpi">Historical CPI</option>
+                <option value="fixed">Fixed rate</option>
               </select>
             </div>
-            <div class="field">
-              <label for="mcTrials">Trials</label>
-              <input id="mcTrials" type="number" min="100" step="100" value="10000" />
-              <p class="hint trials-cap" id="mcTrialsCap" hidden></p>
+            <div class="field" id="fixedInflationWrap" hidden>
+              <label for="fixedInflation">Fixed inflation</label>
+              <div class="suffixed"><input id="fixedInflation" type="number" min="0" max="20" step="0.1" value="3" /><span>%</span></div>
             </div>
           </div>
-          <div class="row2" id="mcVarBlockWrap">
-            <div class="field"><label for="mcBlockMin">Shortest streak <span class="hint">years</span></label><input id="mcBlockMin" type="number" min="1" max="30" step="1" value="2" /></div>
-            <div class="field"><label for="mcBlockMax">Longest streak <span class="hint">years</span></label><input id="mcBlockMax" type="number" min="1" max="30" step="1" value="8" /></div>
+          <p class="hint" id="fixedInflationHint" hidden>What-if lever: returns stay historical (nominal); only the inflation applied to your spending changes. Results are no longer a self-consistent replay of history — e.g. the 1970s get easier while the deflationary 1930s get harder.</p>
+          <div class="field">
+            <div class="lab"><label for="longevity">Longevity</label><button type="button" class="info" id="longevityInfoBtn" aria-controls="longevityInfo" aria-expanded="false" aria-label="About longevity">i</button></div>
+            <select id="longevity">
+              <option value="0">SSA table as published</option>
+              <option value="2" selected>2 years younger (default)</option>
+              <option value="4">4 years younger: above-average income or health</option>
+              <option value="6">6 years younger: well above average</option>
+            </select>
+            <p class="hint info-text" id="longevityInfo" hidden>Reads the SSA life table as if you were younger, because it understates how long people live: it freezes today's death rates, and higher earners outlive the average. 2 years roughly matches the Trustees' cohort table for someone retiring now. Applies to a partner too.</p>
           </div>
-          <p class="hint" id="mcVarBlockHint">Each resampled run of consecutive years gets its own length, drawn at random between these two. A fixed length imposes a rhythm history doesn't have; a range mixes short shocks and long regimes. The default 2–8 averages 5 years, matching the fixed-length option.</p>
-          <div class="row2">
-            <div class="field" id="mcBlockWrap" hidden><label for="mcBlock">Block length (years)</label><input id="mcBlock" type="number" min="1" max="20" step="1" value="5" /></div>
-            <div class="field"><label for="mcSeed">Random seed <span class="hint">reproducible — new each load</span></label><input id="mcSeed" type="number" min="0" step="1" /></div>
-          </div>
-        </div>
+          <details class="advanced" id="adjBox">
+            <summary>Return adjustments <span id="adjBadge" class="adj-badge" hidden></span></summary>
+            <p class="hint lab">Added to every year's return, in percentage points.<button type="button" class="info" id="adjInfoBtn" aria-controls="adjInfo" aria-expanded="false" aria-label="About return adjustments">i</button></p>
+            <p class="hint info-text" id="adjInfo" hidden>Shift an asset class's return by a fixed amount every year — a <em>haircut</em> if negative. Use it to ask what happens if history was too generous: high starting valuations argue for lower equity returns, and today's yields may differ from the historical average. The offset is applied to each year's return, so a &minus;0.25%/yr haircut lowers the nominal return by exactly 0.25 points and the real return by a touch less (about 0.24 at 3% inflation, since returns are deflated geometrically). Left at 0, history is used exactly as recorded. An offset only counts for an asset this portfolio holds — except <em>Cash</em>, which also moves the rate on the monthly withdrawal bucket, since that money sits in the same 3-month T-bills.</p>
+            <div class="row2">
+              <div class="field"><label for="adjStocks">Stocks</label><div class="suffixed"><input id="adjStocks" class="adj-input" type="number" min="-5" max="5" step="0.05" value="0" /><span>%/yr</span></div></div>
+              <div class="field"><label for="adjBonds">Bonds</label><div class="suffixed"><input id="adjBonds" class="adj-input" type="number" min="-5" max="5" step="0.05" value="0" /><span>%/yr</span></div></div>
+            </div>
+            <div class="row2">
+              <div class="field"><label for="adjGold">Gold</label><div class="suffixed"><input id="adjGold" class="adj-input" type="number" min="-5" max="5" step="0.05" value="0" /><span>%/yr</span></div></div>
+              <div class="field"><label for="adjCash">Cash</label><div class="suffixed"><input id="adjCash" class="adj-input" type="number" min="-5" max="5" step="0.05" value="0" /><span>%/yr</span></div></div>
+            </div>
+            <div class="row2">
+              <div class="field"><label for="adjCorp">Corporate bonds</label><div class="suffixed"><input id="adjCorp" class="adj-input" type="number" min="-5" max="5" step="0.05" value="0" /><span>%/yr</span></div></div>
+              <div class="field"><label for="adjReit">Real estate</label><div class="suffixed"><input id="adjReit" class="adj-input" type="number" min="-5" max="5" step="0.05" value="0" /><span>%/yr</span></div></div>
+            </div>
+            <div class="row2">
+              <div class="field"><label for="adjSmallcap">US small cap</label><div class="suffixed"><input id="adjSmallcap" class="adj-input" type="number" min="-5" max="5" step="0.05" value="0" /><span>%/yr</span></div></div>
+              <div class="field"></div>
+            </div>
+          </details>
+        </details>
       </section>
 
-      <div class="actions">
+      <section class="group">
+        <details id="foldMc">
+          <summary><h2 class="inline">Monte Carlo</h2><span id="sumMc" class="fold-sum fold-line"></span></summary>
+          <label class="checkline"><input id="runMonteCarlo" type="checkbox" /> Also run a Monte Carlo simulation</label>
+          <div id="mcOptions" class="mc-options" hidden>
+            <div class="row2">
+              <div class="field">
+                <label for="mcMethod">Method</label>
+                <select id="mcMethod">
+                  <option value="bootstrap">Bootstrap (resample years)</option>
+                  <option value="varblock" selected>Block bootstrap (variable streaks)</option>
+                  <option value="block">Block bootstrap (fixed streaks)</option>
+                  <option value="parametric">Parametric (normal)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="mcTrials">Trials</label>
+                <input id="mcTrials" type="number" min="100" step="100" value="10000" />
+                <p class="hint trials-cap" id="mcTrialsCap" hidden></p>
+              </div>
+            </div>
+            <div class="row2" id="mcVarBlockWrap">
+              <div class="field"><div class="lab"><label for="mcBlockMin">Shortest streak (years)</label><button type="button" class="info" id="mcBlockInfoBtn" aria-controls="mcVarBlockHint" aria-expanded="false" aria-label="About streak lengths">i</button></div><input id="mcBlockMin" type="number" min="1" max="30" step="1" value="2" /></div>
+              <div class="field"><label for="mcBlockMax">Longest streak (years)</label><input id="mcBlockMax" type="number" min="1" max="30" step="1" value="8" /></div>
+            </div>
+            <p class="hint info-text" id="mcVarBlockHint" hidden>Each resampled run of consecutive years gets its own length, drawn at random between these two. A fixed length imposes a rhythm history doesn't have; a range mixes short shocks and long regimes. The default 2–8 averages 5 years, matching the fixed-length option.</p>
+            <div class="row2">
+              <div class="field" id="mcBlockWrap" hidden><label for="mcBlock">Block length (years)</label><input id="mcBlock" type="number" min="1" max="20" step="1" value="5" /></div>
+              <div class="field"><div class="lab"><label for="mcSeed">Random seed</label><button type="button" class="info" id="seedInfoBtn" aria-controls="seedInfo" aria-expanded="false" aria-label="About the random seed">i</button></div><input id="mcSeed" type="number" min="0" step="1" /></div>
+            </div>
+            <p class="hint info-text" id="seedInfo" hidden>The same seed always produces the same trials, so a shared link reproduces its Monte Carlo results exactly. A new seed is drawn each time the page loads.</p>
+          </div>
+        </details>
+      </section>
+
+      <div class="runbar">
         <button id="runBtn" class="primary" type="submit">Run simulation</button>
+        <p id="formMsg" class="formmsg" role="alert"></p>
+      </div>
+      <details id="foldSolve" class="tool">
+        <summary>Find max spending <span id="sumSolve" class="fold-sum"></span></summary>
         <div class="solver">
           <button id="solveBtn" class="secondary" type="button">Find max spending for</button>
           <div class="suffixed compact"><input id="targetSuccess" type="number" min="1" max="100" step="1" value="95" /><span>%</span></div>
@@ -327,14 +344,13 @@
             <button type="button" data-basis="montecarlo">Monte Carlo</button>
           </div>
         </div>
-        <div class="util">
-          <button id="shareBtn" class="ghost" type="button" title="Copy a link that restores these exact inputs">Copy link</button>
-          <button id="printBtn" class="ghost" type="button" title="Print a report of the current inputs and results">Print report</button>
-          <button id="resetBtn" class="ghost" type="button">Reset</button>
-        </div>
-      </div>
-      <p id="formMsg" class="formmsg" role="alert"></p>
+      </details>
       <div id="solveResult" class="solve-result" role="status" hidden></div>
+      <div class="util">
+        <button id="shareBtn" class="ghost" type="button" title="Copy a link that restores these exact inputs">Copy link</button>
+        <button id="printBtn" class="ghost" type="button" title="Print a report of the current inputs and results">Print</button>
+        <button id="resetBtn" class="ghost" type="button">Reset</button>
+      </div>
     </form>
 
     <!-- ============================== RESULTS ============================== -->
@@ -562,9 +578,9 @@
         <h3>Historical vs Monte Carlo</h3>
         <ul>
           <li><strong>Historical</strong> replays every actual sequence of returns since 1871 — a 30-year plan is tested starting in 1871, 1872, … 1996.</li>
-          <li><strong>Income and tax.</strong> Enter Social Security and pensions at their <em>gross</em> amount, as on your benefit statement. Each income row has a <em>Source</em>: Social Security and pensions are taxed at your effective rate, while <em>Tax-free</em> is for Roth income or an amount you have already netted. Taxing all of Social Security slightly overstates the tax, since at most 85% of it is taxable — the safe side. Under Extra expenses/income, <em>Income</em> is taxed too, and <em>Tax-free</em> is for an inheritance or a gift, which are not federally taxed. Links made before this distinction read an untyped income as taxed: the conservative reading.</li>
+          <li><strong>Income and tax.</strong> Enter Social Security and pensions at their <em>gross</em> amount, as on your benefit statement. Each income row has a <em>Source</em>: Social Security and pensions are taxed at your effective rate, while <em>Tax-free</em> is for Roth income or an amount you have already netted. Taxing all of Social Security slightly overstates the tax, since at most 85% of it is taxable — the safe side. Under <em>Extra expenses and income</em>, <em>Income</em> is taxed too, and <em>Tax-free</em> is for an inheritance or a gift, which are not federally taxed. Links made before this distinction read an untyped income as taxed: the conservative reading.</li>
           <li><strong>The Social Security cut.</strong> The 2026 Trustees Report projects the retirement trust fund running out in late 2032. Under current law benefits then fall automatically to the 78% that payroll taxes can fund, for everyone, including people already retired and benefits claimed later. That cut is on by default and applied to every <em>Soc. Sec.</em> row from 2032. Congress may well act first, but assuming it will is the optimistic choice, so it is yours to make by unticking the box. The cut year is a calendar year, mapped onto retirement years from the year the plan starts; a shared link keeps its own start year, so it reproduces the same plan when opened later.</li>
-          <li><strong>Planning for two.</strong> A couple's money has to last until the <em>second</em> death, which is much later than either life expectancy alone: for two 65-year-olds the published SSA table gives about a 51% chance at least one reaches 90, against 24% for a man alone. Tick <em>Planning for two</em> and the mortality chart uses the chance that at least one of you is alive. The two lifetimes are treated as independent; in reality spouses' mortality is correlated, which makes it likelier you both die earlier — so this, too, errs toward assuming the money must last longer.</li>
+          <li><strong>Planning for two.</strong> A couple's money has to last until the <em>second</em> death, which is much later than either life expectancy alone: for two 65-year-olds the published SSA table gives about a 51% chance at least one reaches 90, against 24% for a man alone. Tick <em>Plan for two</em> and the mortality chart uses the chance that at least one of you is alive. The two lifetimes are treated as independent; in reality spouses' mortality is correlated, which makes it likelier you both die earlier — so this, too, errs toward assuming the money must last longer.</li>
           <li><strong>Year by year.</strong> The table under Details replays one historical retirement in full — start balance, spending, income, expenses, tax, withdrawal, fees, the year's return and inflation, and the end balance — computed by exactly the same code as the historical backtest, so every row matches it to the cent (Monte Carlo paths are synthetic, so they have no year-by-year history to show). It opens on the worst case. Every year the portfolio covers in full satisfies <em>spending + expenses + tax = income + withdrawal</em>, so you can check it yourself. The exception is a year in which the portfolio is used up: its needs could not be met in full. That is a failure if it happens before the final year, but in the final year it completes the plan, which is how VPW is designed to end. Start years marked <em>partial</em> are too recent to finish: the table stops where history does, with money still left. <em>Download CSV</em> saves it with both today's and nominal dollars.</li>
           <li><strong>Comparing retirement lengths</strong> is exact for constant-dollar, percentage-of-portfolio and CAPE plans, whose yearly draw depends only on the balance. It is approximate for <em>VPW</em> and <em>Guyton-Klinger</em>, which size the draw from the years remaining — so changing the length changes the spending rule itself, not just the stretch of history being tested. A longer plan draws less each year, so a start year that ran dry under a shorter plan can still be solvent when the data runs out, at which point its outcome is unknown rather than failed and it leaves the success rate entirely. Measured across every allocation and length, that can let a longer plan score up to about 1.8 points <em>higher</em>. It is a limit of the historical record, not a bug to be engineered away: compare these two strategies at a single length.</li>
           <li><strong>Return adjustments</strong> shift an asset class's return by a fixed amount every year — a <em>haircut</em> when negative. The offset is added to each year's return, so &minus;0.25%/yr lowers the nominal return by exactly 0.25 points, and the real return by a/(1+inflation) &mdash; about 0.24 points at 3% inflation, since the engine deflates geometrically rather than subtracting; it is not compounded or scaled by horizon, because a constant offset is what &ldquo;0.25% less every year&rdquo; means, and anything cleverer would be a model of our own sitting on top of the historical record.
@@ -594,12 +610,13 @@
         <p><strong>Kept current automatically.</strong> Nothing is fetched at runtime (that’s the whole security model). Instead, a daily server-side job re-runs the data pipeline and redeploys, so the shipped CAPE tracks the latest value on its own — there’s nothing to enter or update by hand.</p>
 
         <h3>VPW — amortization-based withdrawal</h3>
-        <p>VPW treats your portfolio like a self-managed pension. Each year it withdraws the slice of your <em>current</em> balance that would draw the account down to about $0 over your <em>remaining</em> years, assuming a fixed real growth rate in between. It is the same math as a loan payment, run in reverse: <strong>withdrawal % = PMT(assumed real return, years left)</strong>, taken at the <em>start</em> of the year — so the factor rises every year and the final year withdraws 100%. Because the percentage always applies to what you actually hold, VPW <strong>shrinks rather than running dry</strong> — though a <em>spending floor</em> or a large fixed expense can still force the draw past what the portfolio holds and exhaust it. The trade-off is that your income swings with the market and is designed to finish near zero, so it pairs best with Social Security or a pension covering your essentials. (Add those under <em>Income &amp; adjustments</em>, or set a <em>Spending floor</em> — note a floor high enough to force over-spending in a bad sequence <em>can</em> make even VPW fail.)</p>
+        <p>VPW treats your portfolio like a self-managed pension. Each year it withdraws the slice of your <em>current</em> balance that would draw the account down to about $0 over your <em>remaining</em> years, assuming a fixed real growth rate in between. It is the same math as a loan payment, run in reverse: <strong>withdrawal % = PMT(assumed real return, years left)</strong>, taken at the <em>start</em> of the year — so the factor rises every year and the final year withdraws 100%. Because the percentage always applies to what you actually hold, VPW <strong>shrinks rather than running dry</strong> — though a <em>spending floor</em> or a large fixed expense can still force the draw past what the portfolio holds and exhaust it. The trade-off is that your income swings with the market and is designed to finish near zero, so it pairs best with Social Security or a pension covering your essentials. (Add those under <em>Income and expenses</em>, or set a <em>Spending floor</em> — note a floor high enough to force over-spending in a bad sequence <em>can</em> make even VPW fail.)</p>
         <p>The <strong>Assumed real return</strong> field (default <strong>3.4%</strong>) is the only knob. A higher rate front-loads spending — it bets the balance will grow faster, so it draws more early and less later; a lower rate flattens and defers spending. It is a <em>planning</em> assumption for the withdrawal schedule only — the simulation still runs your balance against real market history (or the Monte&nbsp;Carlo draws), so a rosy assumed return does not make the money last, it just spends it sooner.</p>
         <p><strong>How this differs from the Bogleheads VPW.</strong> The skeleton is identical — both amortize the balance to ~$0 over the years remaining, at the start of each year. The difference is <em>where the rate comes from</em>. WebSWR uses the <strong>single number you set</strong>, applied whatever your allocation. The Bogleheads spreadsheet (longinvest’s VPW) instead <strong>derives</strong> the rate from your <strong>stock/bond mix</strong> — assuming a higher real return for stocks than for bonds (on the order of ~5% and ~2% real in its published tables) and blending them by weight — then ships the result as a fixed percentage table. So for a stock-heavy portfolio the Bogleheads rate is higher than 3.4% and it prescribes <em>larger</em> early withdrawals than WebSWR does out of the box; to line the two up, set this field to your allocation’s blended rate (a 60/40 mix works out to roughly 3.5–4% in its tables). WebSWR also keeps your allocation fixed each year rather than following VPW’s recommended equity glidepath, and computes the percentage live instead of from a lookup table.</p>
 
         <h3>Find max spending</h3>
-        <p>Enter a target success rate and click the red button. WebSWR searches for the highest constant spending that still hits that target — against history or Monte&nbsp;Carlo. The answer appears under the button and is applied to your plan.</p>
+        <p>Open <em>Find max spending</em> under the Run button, enter a target success rate and click <em>Find max spending for</em>. WebSWR searches for the highest constant spending that still hits that target — against history or Monte&nbsp;Carlo. The answer appears below it and is applied to your plan.</p>
+        <p>Throughout the form, a small <strong>i</strong> beside a field opens a short explanation, and each folded section shows a one-line summary of its settings, so nothing that affects your results is ever out of sight.</p>
 
         <h3>Will your money outlast you?</h3>
         <p>Set your age and sex, and the “Rich, broke, or dead?” chart layers SSA life-table survival odds onto your simulation: for each year it shows the chance you’re <strong>alive with money</strong>, <strong>alive but broke</strong>, or <strong>deceased</strong>. Often you’re far more likely to pass away with money left over than to run out of it.</p>
@@ -612,7 +629,7 @@
         <h3>Compound interest</h3>
         <p>The <strong>Compound</strong> tab grows a lump sum plus regular additions: pick the rate, how many times per year it compounds, and whether additions land at the <em>start</em> or <em>end</em> of each compounding period (the annual addition is spread evenly across those periods). You get the future value, total contributed vs. interest earned, and a year-by-year breakdown. Values are nominal — inflation and taxes are not applied.</p>
 
-        <h3>Income &amp; adjustments</h3>
+        <h3>Income and expenses</h3>
         <p>Add Social Security, pensions, or one-off expenses. <strong>Years count from retirement</strong> (year 1 = your first year retired). Tick <strong>COLA</strong> to grow an amount with inflation.</p>
         <p><strong>What isn't modelled unless you add it.</strong> <em>Healthcare and long-term care:</em> medical prices have long risen faster than general inflation, and a long-term-care stay can cost more in a year than many retirees spend in total, so an Expense row for the later years is worth considering. <em>Your own inflation rate:</em> your spending, and any row with COLA ticked, grows with CPI-U, the index for all urban consumers, and prices for older households can rise faster. The BLS’s experimental CPI-E for Americans 62 and over averaged about 0.2 points a year more than CPI-U from 1982 to 2011, mostly because older households spend more on medical care, though the Congressional Budget Office found it ran lower in the years after 2007. To allow for a higher personal rate, lower every asset’s <em>Return adjustment</em> by the difference: for the portfolio, that has nearly the same effect.</p>
 

@@ -55,6 +55,12 @@ echo "== worker parity (page options reach the Monte Carlo engine) =="
 if python3 "$DIR/tests/worker_parity.py"; then :; else fail=1; fi
 echo ""
 
+# Info toggles: the markup and ui.js's INFO table must agree, and no warning or
+# live status line may ever sit behind a toggle (the conservative rule).
+echo "== info toggles (index.html vs ui.js; warnings stay visible) =="
+if python3 "$DIR/tests/info_parity.py"; then :; else fail=1; fi
+echo ""
+
 # Guard: every runtime module must actually be referenced by index.html. (The
 # headless bundles load them regardless, so only this catches a missing <script>.)
 echo "== index.html references all runtime scripts =="

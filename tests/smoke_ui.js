@@ -890,6 +890,122 @@ fireBeforePrint();
 A(textOf(document.getElementById("report")).indexOf("retirement simulation report") >= 0,
   "Cmd+P back on the Retirement tab builds the simulation report");
 
+// ===== input panel: a fold may hide inputs, never their effect =====
+(function () {
+  var g = function (id) { return document.getElementById(id); };
+  A(!g("moreAssets").open && g("sumMoreAssets").textContent === "",
+    "More asset classes starts folded, with nothing set inside to report");
+  g("allocGold").value = "10"; fire(g("allocGold"), "input");
+  A(g("sumMoreAssets").textContent === "gold 10%",
+    "a non-zero gold allocation shows in the closed fold's summary (got '" + g("sumMoreAssets").textContent + "')");
+  SWR.ui.__openFolds();
+  A(g("moreAssets").open === true, "...and the fold opens on load, as it would for a share link carrying it");
+  g("allocGold").value = "0"; fire(g("allocGold"), "input"); g("moreAssets").open = false;
+  A(g("sumMoreAssets").textContent === "", "...and the summary clears when the allocation goes back to 0%");
+
+  // Every fold's summary line tracks its fields through the form-level listener.
+  var sync = function () { fire(g("inputs"), "input"); };
+  var adjIds = ["adjStocks", "adjBonds", "adjGold", "adjCash", "adjCorp", "adjReit", "adjSmallcap"];
+  var yr = new Date().getFullYear();
+  g("feeRate").value = "0.10"; g("taxRate").value = "0"; g("inflationMode").value = "cpi"; g("longevity").value = "2";
+  adjIds.forEach(function (id) { g(id).value = "0"; });
+  g("ssCutOn").checked = true; g("ssCutPct").value = "78"; g("ssCutYear").value = "2032"; g("planYear").value = String(yr);
+  g("runMonteCarlo").checked = true; g("mcMethod").value = "varblock"; g("mcTrials").value = "2000";
+  g("mcBlockMin").value = "2"; g("mcBlockMax").value = "8";
+  ["foldIncome", "foldAssumptions", "foldMc", "adjBox"].forEach(function (id) { g(id).open = false; });
+  sync();
+  A(g("sumAssumptions").textContent === "Fees 0.10% · tax 0% · historical inflation · life table 2 years younger · no return adjustments",
+    "Assumptions summary at the defaults (got '" + g("sumAssumptions").textContent + "')");
+  A(/^(No income added|\d+ incomes?) · /.test(g("sumIncome").textContent) &&
+    g("sumIncome").textContent.indexOf("Social Security cut to 78% from 2032") >= 0,
+    "Income summary counts the rows and states the Social Security cut (got '" + g("sumIncome").textContent + "')");
+  A(g("sumMc").textContent === "On · variable streaks 2–8 years · 2,000 trials",
+    "Monte Carlo summary names the method, streaks and trials (got '" + g("sumMc").textContent + "')");
+  SWR.ui.__openFolds();
+  A(!g("foldAssumptions").open && !g("foldMc").open && !g("adjBox").open,
+    "folds holding only default values stay closed on load");
+
+  g("feeRate").value = "0.25"; g("taxRate").value = "15"; g("inflationMode").value = "fixed"; g("fixedInflation").value = "4";
+  g("longevity").value = "0"; g("adjStocks").value = "-0.25"; g("adjBonds").value = "0.25";
+  sync();
+  A(g("sumAssumptions").textContent === "Fees 0.25% · tax 15% · fixed 4% inflation · life table as published · " +
+    "returns adjusted: stocks −0.25%/yr, bonds +0.25%/yr",
+    "Assumptions summary reflects every change, signs included (got '" + g("sumAssumptions").textContent + "')");
+  SWR.ui.__openFolds();
+  A(g("foldAssumptions").open === true && g("adjBox").open === true,
+    "a link that sets an assumption or a return adjustment opens both folds on load");
+
+  g("planYear").value = String(yr - 1); sync();
+  A(g("sumIncome").textContent.indexOf("plan starts in " + (yr - 1) + ", before this year (optimistic)") >= 0,
+    "a past start year is flagged as optimistic in the closed Income summary");
+  g("ssCutOn").checked = false; sync();
+  A(g("sumIncome").textContent.indexOf("no Social Security cut (optimistic)") >= 0 && g("sumIncome").textContent.indexOf("plan starts") < 0,
+    "dropping the cut is flagged as optimistic, and the start year then no longer matters");
+  SWR.ui.__openFolds();
+  A(g("foldIncome").open === true, "a link that changes the Social Security settings opens Income and expenses");
+
+  g("mcMethod").value = "block"; g("mcBlock").value = "5"; sync();
+  A(g("sumMc").textContent === "On · fixed 5-year streaks · 2,000 trials", "fixed-streak method shows its block length");
+  g("runMonteCarlo").checked = false; sync();
+  A(g("sumMc").textContent === "Off", "Monte Carlo summary reads Off when unticked");
+  SWR.ui.__openFolds();
+  A(g("foldMc").open === true, "a link that changes Monte Carlo settings opens its fold");
+  [g("sumIncome"), g("sumAssumptions"), g("sumMc")].forEach(function (s) {
+    A(!/NaN|undefined|\[object/.test(s.textContent), "summary text is clean: '" + s.textContent + "'");
+  });
+
+  // Find max spending: its fold names the target and basis, including a basis
+  // chosen by segment click (which fires no input event of its own).
+  A(g("sumSolve").textContent === "target 95% · historical",
+    "Find max spending summary at the defaults (got '" + g("sumSolve").textContent + "')");
+  g("targetSuccess").value = "90"; sync();
+  fire(g("solveBasis").querySelectorAll("button")[1], "click");
+  A(g("sumSolve").textContent === "target 90% · Monte Carlo",
+    "...and follows the target and the basis segment (got '" + g("sumSolve").textContent + "')");
+  g("foldSolve").open = false; SWR.ui.__openFolds();
+  A(g("foldSolve").open === true, "a link carrying a non-default target opens the Find max spending fold");
+  fire(g("solveBasis").querySelectorAll("button")[0], "click");
+  g("targetSuccess").value = "95";
+
+  // Back to the defaults for anything that runs after this block.
+  g("feeRate").value = "0.10"; g("taxRate").value = "0"; g("inflationMode").value = "cpi"; g("longevity").value = "2";
+  adjIds.forEach(function (id) { g(id).value = "0"; });
+  g("ssCutOn").checked = true; g("planYear").value = String(yr);
+  g("runMonteCarlo").checked = true; g("mcMethod").value = "varblock";
+  sync();
+})();
+
+// ===== info toggles: explanations fold away, warnings never do =====
+(function () {
+  var g = function (id) { return document.getElementById(id); };
+  var pairs = SWR.ui.__info();
+  A(pairs.length === 12, "12 info toggles are wired (got " + pairs.length + ")");
+  pairs.forEach(function (p) {
+    var b = g(p[0]), h = g(p[1]);
+    h.hidden = true; b.setAttribute("aria-expanded", "false"); // as index.html ships them (info_parity.py)
+    fire(b, "click");
+    var opened = h.hidden === false && b.getAttribute("aria-expanded") === "true";
+    fire(b, "click");
+    A(opened && h.hidden === true && b.getAttribute("aria-expanded") === "false",
+      p[0] + " opens and closes " + p[1] + ", keeping aria-expanded in step");
+  });
+  // Switching away from variable streaks puts that explanation away; switching
+  // back never forces it open (only its own button does).
+  fire(g("mcBlockInfoBtn"), "click");
+  g("mcMethod").value = "block"; fire(g("mcMethod"), "change");
+  A(g("mcVarBlockHint").hidden === true && g("mcBlockInfoBtn").getAttribute("aria-expanded") === "false",
+    "leaving variable streaks hides their explanation and resets its button");
+  g("mcMethod").value = "varblock"; fire(g("mcMethod"), "change");
+  A(g("mcVarBlockHint").hidden === true, "...and returning to them does not force it open");
+  // The Social Security status line keeps every warning on screen.
+  g("ssCutOn").checked = false; fire(g("ssCutOn"), "change");
+  A(g("ssCutHint").hidden !== true && g("ssCutHint").textContent.indexOf("optimistic") >= 0,
+    "with the cut off, the visible status line still says it is the optimistic choice");
+  g("ssCutOn").checked = true; fire(g("ssCutOn"), "change");
+  A(/^This plan pays \d+% of scheduled benefits from \d+ — retirement year \d+, since it starts in \d+/.test(g("ssCutHint").textContent),
+    "with the cut on, the status line states exactly when it lands (got '" + g("ssCutHint").textContent.slice(0, 80) + "')");
+})();
+
 // Chart hover redraw paths must run without throwing (measureText/draw stubbed).
 ["histCanvas", "rbdCanvas"].forEach(function (id) {
   var c = document.getElementById(id);

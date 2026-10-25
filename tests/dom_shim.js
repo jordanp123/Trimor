@@ -153,7 +153,11 @@ var DEFAULTS = {
 // Non-input element ids that exist in index.html.
 var KNOWN = {};
 ["themeBtn", "helpBtn", "helpOverlay", "helpClose", "helpTitle", "inputs", "allocSum", "spendRateHint", "fixedInflationWrap", "fixedInflationHint", "incomeRows", "addIncome",
- "adjustRows", "addAdjust", "mcOptions", "mcBlockWrap", "mcVarBlockWrap", "mcVarBlockHint", "adjBox", "adjBadge", "adjNote", "horizonNote", "mcTrialsCap", "ssCutFields", "ssCutHint", "partnerFields", "rbdTitle", "ybyCard", "ybyStart", "ybyCsv", "ybyNote", "ybyWrap", "runBtn", "solveBtn", "shareBtn",
+ "adjustRows", "addAdjust", "moreAssets", "sumMoreAssets", "foldIncome", "sumIncome", "foldAssumptions", "sumAssumptions",
+ "foldMc", "sumMc", "longevityInfoBtn", "longevityInfo", "partnerInfoBtn", "partnerInfo", "taxInfoBtn", "taxInfo",
+ "freqInfoBtn", "capeInfoBtn", "capeInfo", "gsolveInfoBtn", "gsolveInfo", "incomeInfoBtn", "incomeInfo",
+ "ssCutInfoBtn", "ssCutInfo", "adjustInfoBtn", "adjustInfo", "adjInfoBtn", "adjInfo", "mcBlockInfoBtn",
+ "seedInfoBtn", "seedInfo", "foldSolve", "sumSolve", "mcOptions", "mcBlockWrap", "mcVarBlockWrap", "mcVarBlockHint", "adjBox", "adjBadge", "adjNote", "horizonNote", "mcTrialsCap", "ssCutFields", "ssCutHint", "partnerFields", "rbdTitle", "ybyCard", "ybyStart", "ybyCsv", "ybyNote", "ybyWrap", "runBtn", "solveBtn", "shareBtn",
  "capeRateNow", "withdrawFreq", "withdrawFreqHint", "printBtn", "report", "buildStamp", "dataWarning",
  "resetBtn", "solveBasis", "solveResult", "gsolveBtn", "gsolveBasis", "gsolveResult", "formMsg", "results", "successCard", "successKind", "successBig", "successLabel", "headStats",
  "progressWrap", "progressBar", "progressLabel", "trajMode", "dollarMode", "trajUnit", "trajCanvas", "histCanvas",

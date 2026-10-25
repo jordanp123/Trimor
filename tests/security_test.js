@@ -37,6 +37,14 @@ A(adjNote === "", "non-string note from the hash dropped (got '" + adjNote + "')
   A(age === 110, "a 1e308 partner age clamps to 110 at the point of use");
   A(document.getElementById("longevity").value === "2",
     "a hostile longevity value ('__proto__') falls back to the default 2-year setback, never the raw table");
+  // Folds: a link that changes a folded setting opens its fold, and the summary
+  // lines render hostile values as plain text, never NaN/undefined/markup.
+  A(document.getElementById("foldIncome").open === true,
+    "the hostile link's Social Security values open Income and expenses on load");
+  ["sumIncome", "sumAssumptions", "sumMc", "sumMoreAssets"].forEach(function (id) {
+    var t = document.getElementById(id).textContent;
+    A(!/NaN|undefined|\[object|<img/.test(t), id + " stays clean text: '" + t.slice(0, 90) + "'");
+  });
 })();
 
 // A share-link seed must override init()'s load-time randomization (the random
