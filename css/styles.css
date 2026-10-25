@@ -246,7 +246,19 @@ button { font: inherit; cursor: pointer; border-radius: 9px; border: 1px solid t
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); padding: 11px 16px; font-weight: 600; }
 .primary:hover { filter: brightness(1.05); }
-.secondary { background: var(--panel-2); color: var(--ink); border-color: var(--line-strong); padding: 9px 12px; }
+/* The two solver buttons start a search, so they must never pass for one more
+   input box -- they once shared the fields' grey fill and border and read as
+   inert. Accent colour, a "run" mark, and a solid fill on hover; "Run
+   simulation" stays the only solid button at rest. The first background is the
+   fallback for browsers without color-mix(). */
+.solve {
+  display: inline-flex; align-items: center; gap: 7px; padding: 9px 13px; font-weight: 600;
+  color: var(--accent); border-color: var(--accent);
+  background: transparent; background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.solve:hover { background: var(--accent); color: var(--accent-ink); }
+.solve:active { transform: translateY(1px); }
+.solve-mark { width: 10px; height: 10px; fill: currentColor; flex: none; }
 .ghost { background: transparent; color: var(--ink-soft); border-color: var(--line-strong); padding: 8px 11px; }
 .ghost:hover { color: var(--ink); border-color: var(--accent); }
 /* The solver buttons are red so they clearly read as a clickable action. */
