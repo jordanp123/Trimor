@@ -72,6 +72,19 @@ Monte-Carlo method, or inflation mode falls through to a safe default rather tha
 erroring (the engine’s `switch` has a `default`, and Monte Carlo validates the
 method against an allow-list).
 
+**Out-of-range numbers are refused, not run.** A share link is not only an
+injection or DoS channel: it can also carry numbers that make a failing plan
+look safe. Run as typed, a negative fee, a negative spending ceiling, a negative
+withdrawal rate or a 250% guardrail cut each produced a "100%" success rate, and
+a 200%/−100% allocation ran as a leveraged portfolio. `validate()` therefore
+checks every engine input that is in use against its meaningful range
+(allocations, fees, tax, each strategy's parameters, floor and ceiling, fixed
+inflation, block length) and refuses the run with a message naming the field —
+never clamping silently, so what runs is always what is on screen. A blank or
+unreadable spending figure is asked for rather than run as $0. As a last line
+of defence the engine fails any year whose arithmetic is not a number, so a
+`NaN` can never be scored as "survived".
+
 ## Denial-of-service bounds
 
 Because everything is client-side, a “DoS” can only target the visitor’s own

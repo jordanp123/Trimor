@@ -249,7 +249,56 @@
     return SWR.core.adjustReturns(d, adj);
   }
 
+  // A typed value that is not a number in [lo, hi]. Blank is not "out of
+  // range": those fields fall back to their defaults, as they always have.
+  const outOfRange = (id, lo, hi) => {
+    const raw = stripNum($(id).value).trim();
+    if (raw === "") return false;
+    const v = parseFloat(raw);
+    return !isFinite(v) || v < lo || v > hi;
+  };
+
   function validate() {
+    // RANGES. Every number here reaches the engine as typed, so one outside
+    // its meaningful range is refused -- never run, never silently clamped. Run
+    // as typed, a negative fee, a negative spending ceiling, a -10% withdrawal
+    // rate or a 250% guardrail cut each scored "100%" on a plan that fails 4
+    // cycles in 10, a 200%/-100% allocation ran as a leveraged portfolio, and
+    // a tax rate outside 0-90% ran as something other than what was on screen.
+    // A crafted share link can carry any of these, so this is not only typos.
+    for (const id in ALLOC) {
+      if (outOfRange(id, 0, 100)) return "Each asset allocation must be between 0% and 100%.";
+    }
+    const strat = $("strategy").value;
+    const RANGES = [
+      // [input id, what the message calls it, min, max, unit, only checked when in use]
+      ["feeRate", "Annual fees", 0, 100, "%", true],
+      ["taxRate", "Tax rate", 0, 90, "%", true],
+      ["spendPercent", "Withdrawal rate", 0, 100, "%", strat === "percent"],
+      ["vpwReturn", "Assumed real return", -50, 50, "%", strat === "vpw"],
+      ["capeA", "Base rate (a)", 0, 50, "%", strat === "cape"],
+      ["capeB", "Earnings-yield weight (b)", 0, 10, "", strat === "cape"],
+      ["gkGuard", "Guardrail band", 0, 100, "%", strat === "guyton"],
+      ["gkAdjust", "Spending cut/raise", 0, 50, "%", strat === "guyton"],
+      ["fixedInflation", "Fixed inflation", 0, 50, "%", $("inflationMode").value === "fixed"],
+      ["mcBlock", "Block length", 1, MAX_STREAK, " years", $("runMonteCarlo").checked && $("mcMethod").value === "block"],
+    ];
+    for (let k = 0; k < RANGES.length; k++) {
+      const r = RANGES[k];
+      if (r[5] && outOfRange(r[0], r[2], r[3]))
+        return r[1] + " must be between " + r[2] + r[4] + " and " + r[3] + r[4] + ".";
+    }
+    // Spending amounts. A blank or unreadable spending figure used to run as
+    // $0 a year -- which never fails -- so it is asked for instead.
+    if (strat === "percent" || strat === "vpw" || strat === "cape") {
+      if (outOfRange("spendFloor", 0, MAX_PORTFOLIO) || outOfRange("spendCeiling", 0, MAX_PORTFOLIO))
+        return "Spending floor and ceiling must be dollar amounts of 0 or more.";
+    } else {
+      // Constant-dollar, Guyton-Klinger, and anything unrecognised (which the
+      // engine runs as constant-dollar) all spend this figure.
+      const raw = stripNum($("initialSpend").value).trim(), v = parseFloat(raw);
+      if (raw === "" || !isFinite(v) || v < 0) return "Enter your annual spending (a dollar amount, 0 or more).";
+    }
     const s = allocSum();
     if (Math.abs(s - 100) > 0.5) return "Asset allocation must sum to 100% (currently " + s.toFixed(0) + "%).";
     const iv = num("initialValue", 0);
@@ -624,7 +673,7 @@
     if (ev) ev.preventDefault();
     const err = validate();
     if (err) return msg(err, false);
-    if (ev) { $("solveResult").hidden = true; $("gsolveResult").hidden = true; } // a manual run clears stale solver results
+    if (ev) { $("solveResult").hidden = true; $("gsolveResult").hidden = true; state.solveCheck = null; } // a manual run clears stale solver results
     const params = buildParams();
     const data = effectiveData();
     state.params = params; state.data = data; state.montecarlo = null;
@@ -721,6 +770,7 @@
   // stays selected until the user clicks the Monte Carlo tab themselves.
   function onMC(s) {
     state.montecarlo = s; showProgress(false); enableMcTab(true);
+    noteSolveShortfall();
     // A print is waiting on this Monte Carlo pass: build + print now.
     if (printPending) { printPending = false; if (buildSimReport()) window.print(); }
   }
@@ -742,6 +792,16 @@
     return worker;
   }
 
+  // Monte Carlo solvers search on the SAME trials the run will use, up to this
+  // many, so the answer they promise is the answer the re-run shows. They used
+  // to search on 5,000 while the default run uses 10,000: measured over 12
+  // solves, the full run then landed under the promised target in 7 (by up to
+  // 0.29 points). Fewer bisection steps pay for the extra trials -- the result
+  // is floored to $100 anyway, and a coarser search can only land lower.
+  // Above this many trials the search is a subset of the run, and
+  // noteSolveShortfall() says so if the full run comes in under the target.
+  const SOLVE_TRIALS = 10000, MC_SOLVE_ITERS = 18, MC_GSOLVE_ITERS = 22;
+
   function solve() {
     if (solving) return; // a solve is already in flight
     const err = validate();
@@ -752,13 +812,13 @@
     solving = true;
     if (state.solveBasis === "montecarlo") {
       const o = {
-        method: $("mcMethod").value, trials: Math.min(5000, clampTrials()),
+        method: $("mcMethod").value, trials: Math.min(SOLVE_TRIALS, clampTrials()),
         block: Math.round(num("mcBlock", 5)), blockMin: blockLo(), blockMax: blockHi(),
         seed: Math.round(num("mcSeed", 12345)),
       };
       const inline = function () {
         const runner = (pp, dd) => SWR.mc.run(pp, dd, Object.assign({}, o, { successOnly: true }));
-        applySolve(SWR.core.solveSpending(params, data, target, runner));
+        applySolve(SWR.core.solveSpending(params, data, target, runner, null, MC_SOLVE_ITERS));
       };
       solveFallback = inline;
       const w = getWorker();
@@ -766,7 +826,7 @@
         showProgress(true, 0);
         msg("Finding max spending (Monte Carlo)…", true);
         armSolveTimer();
-        w.postMessage({ type: "solve", basis: "montecarlo", params, data, target, method: o.method, trials: o.trials, block: o.block, blockMin: o.blockMin, blockMax: o.blockMax, seed: o.seed });
+        w.postMessage({ type: "solve", basis: "montecarlo", params, data, target, iters: MC_SOLVE_ITERS, method: o.method, trials: o.trials, block: o.block, blockMin: o.blockMin, blockMax: o.blockMax, seed: o.seed });
         return;
       }
       inline();
@@ -774,6 +834,24 @@
     }
     solveFallback = null;
     applySolve(SWR.core.solveSpending(params, data, target));
+  }
+
+  // A Monte Carlo solve promises a target; the full re-run is what the reader
+  // then sees. With more trials than the search used, sampling noise can leave
+  // the full run a few tenths of a point short -- so say so in the solver's own
+  // box, where the promise was made, rather than leave two numbers disagreeing.
+  // Called when the box is written and again when the run finishes, whichever
+  // comes last (the run is asynchronous in a browser, immediate in the tests).
+  function noteSolveShortfall() {
+    const c = state.solveCheck, s = state.montecarlo;
+    if (!c || !c.ready || !s) return;
+    state.solveCheck = null;
+    if (!(s.successRate < c.target)) return;
+    $(c.box).appendChild(el("p", { class: "solve-note",
+      text: "The full run of " + s.total.toLocaleString("en-US") + " trials came in at " + fmtRate(s.successRate) +
+        "%, just under the " + (c.target * 100).toFixed(0) + "% target: the search used the first " +
+        SOLVE_TRIALS.toLocaleString("en-US") + " trials, and the rest moved it. Lower " + c.what +
+        " a little and re-run, or use " + SOLVE_TRIALS.toLocaleString("en-US") + " trials or fewer for an exact match." }));
   }
 
   function applySolve(max) {
@@ -797,6 +875,7 @@
     syncStrategy(); // after the writeback so the "Initial rate" hint shows the new value
     if (basis === "montecarlo") { $("runMonteCarlo").checked = true; toggleMcOptions(); }
     msg("", true);
+    state.solveCheck = basis === "montecarlo" ? { target, box: "solveResult", what: "spending" } : null;
     run(); // re-run with the solved spending (run() leaves the solver result box alone)
     // Prominent answer right at the solver so it can't be missed.
     const sr = $("solveResult");
@@ -816,6 +895,7 @@
             + "not a guarantee; 90–95% is the usual planning range." }));
     }
     sr.hidden = false;
+    if (state.solveCheck) { state.solveCheck.ready = true; noteSolveShortfall(); }
   }
 
   // ---------- percent-of-portfolio guardrail solver ----------
@@ -850,13 +930,13 @@
     solving = true;
     if (state.gsolveBasis === "montecarlo") {
       const o = {
-        method: $("mcMethod").value, trials: Math.min(5000, clampTrials()),
+        method: $("mcMethod").value, trials: Math.min(SOLVE_TRIALS, clampTrials()),
         block: Math.round(num("mcBlock", 5)), blockMin: blockLo(), blockMax: blockHi(),
         seed: Math.round(num("mcSeed", 12345)),
       };
       const inline = function () {
         const runner = (pp, dd) => SWR.mc.run(pp, dd, Object.assign({}, o, { successOnly: true }));
-        applyGsolve(SWR.core.solveGuardrail(params, data, { solveFor: solveFor, target: target, runner: runner }));
+        applyGsolve(SWR.core.solveGuardrail(params, data, { solveFor: solveFor, target: target, runner: runner, iters: MC_GSOLVE_ITERS }));
       };
       solveFallback = inline;
       const w = getWorker();
@@ -865,7 +945,7 @@
         gmsg("Solving the " + solveFor + " (Monte Carlo)…", true);
         armSolveTimer();
         w.postMessage({ type: "gsolve", basis: "montecarlo", params: params, data: data,
-          solveFor: solveFor, target: target, method: o.method, trials: o.trials, block: o.block, blockMin: o.blockMin, blockMax: o.blockMax, seed: o.seed });
+          solveFor: solveFor, target: target, iters: MC_GSOLVE_ITERS, method: o.method, trials: o.trials, block: o.block, blockMin: o.blockMin, blockMax: o.blockMax, seed: o.seed });
         return;
       }
       inline();
@@ -890,7 +970,7 @@
     const box = $("gsolveResult");
 
     if (!result || !result.feasible) {
-      const best = result && result.bestSuccess != null ? (result.bestSuccess * 100).toFixed(1) : "?";
+      const best = result && result.bestSuccess != null ? fmtRate(result.bestSuccess) : "?";
       gmsg(result && result.reason === "floorTooHigh"
         ? "Not achievable: even capping every year at your floor, the plan only reaches " + best +
           "% success — the floor itself is too high for " + tgt + "%. Lower the floor or the target."
@@ -922,6 +1002,8 @@
         : "Highest safe spending floor for ≥" + tgt + "% " + basisLabel + " success:";
     }
     syncStrategy();
+    state.solveCheck = basis === "montecarlo" && value != null
+      ? { target, box: "gsolveResult", what: "the " + result.solveFor } : null;
     run(); // re-run with the percentage strategy + the solved guardrail
     const nodes = [document.createTextNode(lead + " ")];
     if (value != null) {
@@ -932,6 +1014,7 @@
     }
     box.replaceChildren.apply(box, nodes);
     box.hidden = false;
+    if (state.solveCheck) { state.solveCheck.ready = true; noteSolveShortfall(); }
   }
 
   // ---------- rendering ----------
@@ -945,6 +1028,16 @@
   function enableMcTab(on) {
     $("trajMode").querySelector('[data-mode="montecarlo"]').disabled = !on;
   }
+
+  // Success rates are FLOORED to one decimal, never rounded, and read "100"
+  // only when nothing failed. Rounding printed "100%" over a run with failures
+  // in it (4 of 10,000 trials is 99.96%) and "95.0%" beside an amber card for a
+  // plan at 94.96% -- both overstating what the plan achieved. One function,
+  // used by the headline, the stat card, the printed report and the solvers.
+  const fmtRate = (rate) => rate >= 1 ? "100" : (Math.min(999, Math.floor(rate * 1000 + 1e-9)) / 10).toFixed(1);
+  // Same rule for "share of year-one income kept": whole percent, rounded DOWN,
+  // so a plan is never shown holding more of its income than it did.
+  const pctDown = (share) => Math.floor(share * 100 + 1e-9);
 
   function statCard(k, v) { return el("div", { class: "stat" }, [el("div", { class: "k", text: k }), el("div", { class: "v", text: v })]); }
   function kv(k, v, cls) {
@@ -1120,8 +1213,9 @@
     const lines = [head.map((h) => cell(h)).join(",")];
     const rate = (x) => cell(x, 6);
     tr.rows.forEach((r) => {
-      // ran_out = a failure (before the final year), as the engine counts it;
-      // portfolio_used_up also covers spending the last of it in the final year.
+      // ran_out = a failure, as the engine counts it: a year (the final one
+      // included) whose outflows the balance could not meet. portfolio_used_up
+      // also covers VPW spending the last of it, as planned, in its final year.
       lines.push([cell(r.year), cell(tr.startYear + r.year - 1), cell(age0 + r.year - 1)]
         .concat(money.map((k) => cell(r[k])), [cell(r.end), rate(r.ret), rate(r.infl)],
                 money.map((k) => cell(r[k] / r.deflStart)),
@@ -1179,7 +1273,6 @@
       return;
     }
     const unit = s.mode === "montecarlo" ? "trials" : "cycles";
-    const pct = s.successRate * 100;
     // A percentage-of-portfolio, VPW or CAPE plan normally spends a share of
     // what it still holds, so its success rate is ~always 100% -- an 8%/yr plan
     // would score the same perfect green as a 4% one. For those the headline is
@@ -1212,7 +1305,7 @@
       $("successKind").textContent = "Lowest income · rough case";
       $("successBig").textContent = s.spending.leanestYear
         ? money(s.spending.leanestYear.p10) + "/yr"
-        : Math.round(keep * 100) + "%";
+        : pctDown(keep) + "%";
       // Bands calibrated against real plans rather than picked round: a pure
       // percentage plan halves its income in a bad sequence no matter how
       // modest the rate (3% -> 55%, 4% -> 48%, 5% -> 41%), so those sit in
@@ -1223,7 +1316,7 @@
       // plan red, which teaches people to ignore the colour.
       $("successCard").className = "success-card " + (keep >= 0.6 ? "good" : keep >= 0.4 ? "warn" : "bad");
       let lbl = "Your leanest year in the worst 1-in-10 " + unit.replace(/s$/, "")
-        + " — " + Math.round(keep * 100) + "% of your first year"
+        + " — " + pctDown(keep) + "% of your first year"
         + (s.spending.firstYearMax <= s.spending.firstYearMin * 1.001 + 1
             ? " (" + money(s.spending.firstYear) + ")" : "") + ".";
       lbl += " No " + unit.replace(/s$/, "") + " ran out of money"
@@ -1235,7 +1328,7 @@
       $("successLabel").textContent = lbl;
     } else {
       $("successKind").textContent = "Success rate";
-      $("successBig").textContent = (pct >= 99.95 ? "100" : pct.toFixed(1)) + "%";
+      $("successBig").textContent = fmtRate(s.successRate) + "%";
       $("successCard").className = "success-card " + (s.successRate >= 0.95 ? "good" : s.successRate >= 0.75 ? "warn" : "bad");
       let label = s.succeeded.toLocaleString() + " of " + s.total.toLocaleString() + " " + unit + " lasted " + s.years + " years";
       if (s.startYears) label += " · " + cycleCoverage(s);
@@ -1257,7 +1350,7 @@
                   + " shows up as failures rather than as cuts."
                 : ". In a rough case spending never fell below its year-one level.")
           : ". Spending is variable too: in a rough case it fell to "
-            + Math.round(floor.p10 * 100) + "% of year one"
+            + pctDown(floor.p10) + "% of year one"
             + (s.spending.hasFloor ? " — and your floor is what forced the draw up into these failures." : ".");
       }
       $("successLabel").textContent = label;
@@ -1266,14 +1359,14 @@
     $("headStats").replaceChildren(
       statCard(s.mode === "montecarlo" ? "Trials" : "Historical cycles", s.total.toLocaleString()),
       selfLimiting
-        ? statCard("Money lasted", (pct >= 99.95 ? "100" : pct.toFixed(1)) + "%")
+        ? statCard("Money lasted", fmtRate(s.successRate) + "%")
         : statCard("Median end (real)", money(s.endingReal.median)),
       // Whichever risk is not the headline still gets a card, so both are
       // always on screen for a variable plan.
       variable && s.spending.leanestYear
         ? (selfLimiting
             ? statCard("Typical leanest yr", money(s.spending.leanestYear.median))
-            : statCard("Rough-case income", Math.round(floor.p10 * 100) + "% of yr 1"))
+            : statCard("Rough-case income", pctDown(floor.p10) + "% of yr 1"))
         : statCard("10th pct (real)", money(s.endingReal.p10)),
       statCard("Failures", String(s.failed))
     );
@@ -1668,7 +1761,7 @@
   }
   function rptResults(rpt, label, s, isMC) {
     const sec = rptSection(label);
-    rptKV(sec, "Success rate", (s.successRate * 100).toFixed(1) + "% — " + s.succeeded + " of " + s.total + (isMC ? " trials" : " cycles") + " lasted the full " + s.years + " years");
+    rptKV(sec, "Success rate", fmtRate(s.successRate) + "% — " + s.succeeded + " of " + s.total + (isMC ? " trials" : " cycles") + " lasted the full " + s.years + " years");
     if (!isMC && (s.indeterminate || s.truncatedFailures)) {
       rptKV(sec, "Cycle accounting",
         s.fullCycles + " fully observed, " + s.truncatedFailures +
@@ -1697,7 +1790,7 @@
       // "100%" stand alone on paper.
       if (sp.incomeFloor && VARIABLE_SPENDING.indexOf(sp.strategy) >= 0) {
         rptKV(sec, "Income floor vs year one (typical / rough case)",
-          Math.round(sp.incomeFloor.median * 100) + "% / " + Math.round(sp.incomeFloor.p10 * 100) + "%"
+          pctDown(sp.incomeFloor.median) + "% / " + pctDown(sp.incomeFloor.p10) + "%"
           + (s.failed ? " — and " + s.failed + " run(s) still ran out"
              : sp.hasFloor ? " — your spending floor means ruin is possible in a worse sequence"
              : SELF_LIMITING.indexOf(sp.strategy) >= 0 ? " — this plan cuts income rather than running out"
@@ -2118,6 +2211,12 @@
     renderDataHealth,
     __runForTest: (fromLink) => run(null, { fromLink: !!fromLink }),
     __openFolds: () => openFoldsWithSettings(),
+    __fmtRate: (rate) => fmtRate(rate),
+    __mc: () => state.montecarlo,
+    // Arms the after-solve check exactly as applySolve does, against whatever
+    // Monte Carlo result is on screen, so the note can be tested without
+    // hunting for a seed whose full run happens to land under its target.
+    __solveCheck: (check) => { state.solveCheck = check; noteSolveShortfall(); },
     __info: () => INFO.map((pair) => pair.slice()),
     __mcPending: () => !!state.mcStarted,
     __ybyCsvText: (tr, age) => ybyCsvText(tr, age),

@@ -40,7 +40,7 @@ self.onmessage = function (e) {
           }
         : self.SWR.core.runHistorical;
       const max = self.SWR.core.solveSpending(msg.params, data, msg.target, runner,
-        function (v) { self.postMessage({ type: "progress", value: v }); });
+        function (v) { self.postMessage({ type: "progress", value: v }); }, msg.iters);
       self.postMessage({ type: "solveResult", max: max });
     } else if (msg.type === "gsolve") {
       // Percent-of-portfolio guardrail: solve the missing floor/ceiling for a
@@ -54,7 +54,7 @@ self.onmessage = function (e) {
           }
         : self.SWR.core.runHistorical;
       const result = self.SWR.core.solveGuardrail(msg.params, data, {
-        solveFor: msg.solveFor, target: msg.target, runner: runner,
+        solveFor: msg.solveFor, target: msg.target, runner: runner, iters: msg.iters,
         onProgress: function (v) { self.postMessage({ type: "progress", value: v }); },
       });
       self.postMessage({ type: "gsolveResult", result: result });

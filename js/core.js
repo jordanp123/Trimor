@@ -240,35 +240,54 @@
       const t = taxRate > 0 ? Math.min(taxRate, 0.95) : 0;
       // Taxed income nets only (1 - t) of itself; untaxed income nets in full.
       const incomeTax = f.taxedIncome * t;
-      const drawNet = spend + f.expense - (f.income - incomeTax); // < 0 => surplus reinvested
+      const netIncome = f.income - incomeTax;
+      let drawNet = spend + f.expense - netIncome; // < 0 => surplus reinvested
       // Effective tax on withdrawals: to NET drawNet when a share t of the GROSS
       // withdrawal goes to tax, you must withdraw drawNet/(1-t). (The previous
       // draw*(1+t) treated t as a share of the net and understated the gross-up.)
-      const draw = t > 0 && drawNet > 0 ? drawNet / (1 - t) : drawNet;
+      let draw = t > 0 && drawNet > 0 ? drawNet / (1 - t) : drawNet;
       const fee = port * feeRate;
-      const need = draw + fee;
+      let need = draw + fee;
+
+      // VPW is the one strategy DESIGNED to spend its last dollar in the final
+      // year (its final-year factor is exactly 1), so the fee and the tax on
+      // that last withdrawal always tip need past the balance. That is the plan
+      // completing, not failing -- provided what the balance can still fund
+      // covers everything the plan owes: fees, fixed expenses, and the spending
+      // floor if one is set. The year is then booked at what was actually
+      // spent, ending at exactly $0, rather than at the unaffordable request.
+      let spentLast = false;
+      if (need > port && i === N - 1 && sp.strategy === "vpw") {
+        const afford = (port - fee) * (1 - t) - f.expense + netIncome; // most this year can spend
+        const owed = sp.floor != null ? Math.min(spend, sp.floor * cumInfl) : 0;
+        if (afford >= Math.max(0, owed)) {
+          spend = afford;
+          drawNet = spend + f.expense - netIncome;
+          draw = port - fee;
+          need = port; // exactly: the whole balance goes out
+          spentLast = true;
+        }
+      }
       realWithdrawals[i] = spend / cumInfl; // cumInfl is the deflator at the start of year i
 
-      if (need > port) {
-        // Can't cover this year's outflow. Running dry BEFORE the final year is
-        // a failure; spending the last dollars in the final year completes the
-        // plan (cFIREsim convention: failure = ran out *before* the end).
-        // ranOut mirrors the success test below: only running dry BEFORE the
-        // final year is a failure. Using the last of the money in the final year
-        // completes the plan -- floorless VPW does that by design in every cycle,
-        // and marking those "ran out" put a red failure under a 100% headline.
+      // The year's outflows exceed what is left: the plan has failed. That holds
+      // in EVERY year, the final one included -- a 30-year plan has to pay for
+      // all thirty. (This once let a final-year shortfall pass as "completing
+      // the plan", which scored a retirement that funded only 29 of its 30
+      // years as a success: up to 6.6 points too high on bond-heavy plans, and
+      // 0.5-1.3 points in Monte Carlo.) Written as !(need <= port) so a NaN from
+      // a nonsensical input fails the year instead of sailing through as
+      // "survived" -- every comparison with NaN is false.
+      if (!(need <= port)) {
         if (trace) trace.push({
           year: i + 1, start: startBal, spend, income: f.income, incomeTax, expense: f.expense,
           withdrawal: startBal, withdrawalTax: 0, fee: 0, shortfall: need - startBal,
           ret: r, infl: infl[i], bucket: 0, end: 0, deflStart: cumInfl, deflEnd: cumInfl,
-          ranOut: i < N - 1, depleted: true,
+          ranOut: true, depleted: true,
         });
         port = 0;
-        series[i + 1] = realSeries[i + 1] = 0;
-        if (i < N - 1) {
-          failed = i;
-          for (let j = i + 2; j <= N; j++) series[j] = realSeries[j] = 0;
-        }
+        failed = i;
+        for (let j = i + 1; j <= N; j++) series[j] = realSeries[j] = 0;
         break;
       }
       port -= need;
@@ -288,6 +307,7 @@
         year: i + 1, start: startBal, spend, income: f.income, incomeTax, expense: f.expense,
         withdrawal: draw, withdrawalTax: draw > 0 ? draw - drawNet : 0, fee, shortfall: 0,
         ret: r, infl: infl[i], bucket, end: port, deflStart, deflEnd: cumInfl, ranOut: false,
+        depleted: spentLast, // VPW's final year: the last of the money, spent as planned
       });
       prevReturn = r;
       if (sp.strategy === "cape" && !cape) {
@@ -719,9 +739,12 @@
   // `runner` is the engine to optimize against (historical or Monte Carlo). A
   // fixed-seed Monte Carlo runner makes success(spending) monotonic, so the
   // bisection converges. onProgress(0..1) fires once per iteration.
-  function solveSpending(p, data, target, runner, onProgress) {
+  // `iters` trades precision for runs: each one halves the bracket, and `lo` is
+  // only ever a spending level that PASSED, so fewer iterations can make the
+  // answer slightly lower (the safe side), never higher.
+  function solveSpending(p, data, target, runner, onProgress, iters) {
     runner = runner || runHistorical;
-    const iters = 28;
+    iters = iters > 0 ? iters : 28;
     let lo = 0, hi = p.initialValue; // nobody sustainably spends the whole portfolio/yr
     for (let it = 0; it < iters; it++) {
       const mid = (lo + hi) / 2;

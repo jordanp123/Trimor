@@ -126,43 +126,74 @@ assert(rSafe.successRate === 1 && rSafe.lowestReal.min > 0,
       label + ": median case sits in the interquartile range ($" +
       Math.round(s.representative.median.endValueReal) + ")");
   }
-  // The Worst-case block must show an ACTUAL failure whenever any cycle failed.
-  // A ruined cycle and one that spends its last dollar in the final year both
-  // end at exactly $0, so ranking on ending value alone let a "Survived" cycle
-  // take the slot (production report: 97.7% success, Worst case 1965
-  // "Survived", while 1966/68/69 had really failed).
+  // A FINAL-YEAR SHORTFALL IS A FAILURE. The production report behind this
+  // scenario read "97.7% success, Worst case 1965 Survived": 1965 could not pay
+  // its spending floor in its 24th and last year, ended at $0, and was scored
+  // as a success because running out in the final year once "completed the
+  // plan". A 24-year plan has to pay for all 24 years, so 1965 now fails and
+  // the rate is 128 of 132.
   var reported = core.runHistorical(P({
     initialValue: 600000, years: 24, allocation: { stocks: 0.7, bonds: 0.3 }, feeRate: 0.0005,
     spending: { strategy: "percent", percent: 0.05, floor: 27000, ceiling: 33000, monthly: true },
   }), data);
-  assert(reported.failed > 0, "the reported scenario still has failures (" + reported.failed + ")");
+  assert(reported.failed === 4 && reported.total === 132,
+    "the reported scenario fails 4 of 132 cycles, 1965 among them (got " + reported.failed + " of " + reported.total + ")");
+  var t1965 = core.traceHistorical(P({
+    initialValue: 600000, years: 24, allocation: { stocks: 0.7, bonds: 0.3 }, feeRate: 0.0005,
+    spending: { strategy: "percent", percent: 0.05, floor: 27000, ceiling: 33000, monthly: true },
+  }), data, 1965);
+  assert(t1965.success === false && t1965.failedYear === 23 && t1965.rows[23].ranOut === true && t1965.rows[23].shortfall > 0,
+    "1965 runs out in its final year (24) and is a failure, not a survivor");
   assert(reported.representative.worst.success === false,
     "worst case is a FAILED cycle when failures exist (got " + reported.representative.worst.startYear +
     ", success=" + reported.representative.worst.success + ")");
-  var zeroSurvivor = reported.sampleSeries.filter(function (c) {
-    return c.success && c.realSeries[reported.years] < 0.01;
-  });
-  assert(zeroSurvivor.length > 0,
-    "...and a $0-but-survived cycle exists to tie with (" + zeroSurvivor.map(function (c) { return c.startYear; }).join(",") + ")");
   // Among failures, the earliest ruin is the worst one to show.
   var earliest = Math.min.apply(null, reported.sampleSeries.filter(function (c) { return !c.success; })
     .map(function (c) { return c.failedYear; }));
   assert(reported.representative.worst.failedYear === earliest,
     "worst case is the cycle that ran dry earliest (yr " + (earliest + 1) + ")");
+  // Outside VPW, ending at $0 always means the money ran out: no cycle may both
+  // "survive" and end with nothing.
+  [reported, core.runHistorical(P({ allocation: { stocks: 0.25, bonds: 0.75 }, feeRate: 0.001 }), data),
+   core.runHistorical(P({ spending: { strategy: "guyton", initial: 55000, guard: 0.2, gkAdjust: 0.1 } }), data)].forEach(function (s, k) {
+    var zeroSurvivors = s.sampleSeries.filter(function (c) { return c.success && c.realSeries[s.years] < 0.01; }).length;
+    assert(zeroSurvivors === 0, "non-VPW plan " + k + ": no cycle survives with $0 left (" + zeroSurvivors + ")");
+  });
+  // The old convention scored a plan that funded N-1 of its N years as a
+  // success, so every "N-year" rate was really the (N-1)-year one. Pin the
+  // corrected figures: 25/75 at 4% is 99 of 126 (was 106), and a one-year plan
+  // that cannot pay for its one year fails.
+  var bondHeavy = core.runHistorical(P({ allocation: { stocks: 0.25, bonds: 0.75 }, feeRate: 0.001 }), data);
+  assert(bondHeavy.succeeded === 99 && bondHeavy.total === 126,
+    "25/75 4% 30yr: 99 of 126 cycles pay for all thirty years (got " + bondHeavy.succeeded + " of " + bondHeavy.total + ")");
+  var oneYear = core.simulateCycle(P({ years: 1, initialValue: 30000 }), { stocks: [0.1], bonds: [0.05] }, [0.03]);
+  assert(oneYear.success === false && oneYear.failedYear === 0, "a $30k portfolio cannot fund a one-year $40k plan");
+  // NaN must never read as survival: every comparison with NaN is false, so a
+  // nonsensical input used to skip the shortfall test and "last" all 30 years.
+  var nanPlan = core.simulateCycle(P({ spending: { strategy: "vpw", vpwReturn: -1 } }),
+    { stocks: new Array(30).fill(0.07), bonds: new Array(30).fill(0.03) }, new Array(30).fill(0.03));
+  assert(nanPlan.success === false && nanPlan.failedYear === 0, "a NaN withdrawal fails the year instead of passing it");
 
-  // The mirror: when nearly everything fails, every cycle ends at $0 too, so
-  // the MAXIMUM ties and the Best-case block could show a failed cycle while a
-  // survivor exists (measured: 50/50 stocks-gold, $90k floor -> best showed
-  // 1996 "Failed yr 15" though 1971 survived).
+  // Ties at $0 still happen under VPW, whose survivors spend their last dollar
+  // in the final year by design: with a floor, failures and survivors ALL end
+  // at exactly $0, so ranking on ending value alone could hand the Worst-case
+  // slot to a "Survived" cycle or the Best-case slot to a failed one.
+  var tie = core.runHistorical(P({ feeRate: 0.001, spending: { strategy: "vpw", vpwReturn: 0.034, floor: 60000 } }), data);
+  assert(tie.succeeded > 0 && tie.failed > 0 && tie.endingReal.max < 0.01,
+    "VPW+floor has survivors, failures, and every cycle ending at $0 (" + tie.succeeded + " / " + tie.failed + ")");
+  assert(tie.representative.worst.success === false,
+    "worst case is a FAILED cycle even though everything ties at $0 (got " + tie.representative.worst.startYear + ")");
+  assert(tie.representative.best.success === true,
+    "best case is a SURVIVING cycle whenever any survived (got " +
+    tie.representative.best.startYear + ", success=" + tie.representative.best.success + ")");
+  // A floor nothing can pay fails everywhere -- including the cycles that once
+  // "survived" only by running out in their final year (1971 was the "best").
   var grim = core.runHistorical(P({
     allocation: { stocks: 0.5, gold: 0.5 }, feeRate: 0.001,
     spending: { strategy: "percent", percent: 0.04, floor: 90000 },
   }), data);
-  assert(grim.succeeded > 0 && grim.failed > 0 && grim.endingReal.max < 0.01,
-    "the grim scenario has survivors, failures, and every cycle ending at $0");
-  assert(grim.representative.best.success === true,
-    "best case is a SURVIVING cycle whenever any survived (got " +
-    grim.representative.best.startYear + ", success=" + grim.representative.best.success + ")");
+  assert(grim.succeeded === 0 && grim.failed === grim.total && grim.total > 0,
+    "a $90k floor on a 4% plan fails every cycle (" + grim.failed + " of " + grim.total + ")");
 
   // VPW with a floor must register ruin even at ZERO fees. VPW used to be
   // clamped to the balance unconditionally, so a zero-fee VPW+floor plan
@@ -424,6 +455,31 @@ assert(rSafe.successRate === 1 && rSafe.lowestReal.min > 0,
     });
     assert(bad === 0, "no cycle the engine counts as a success is traced as 'ran out' (" + bad + ")");
     assert(depletedFinal > 0, "...while final-year depletion is still recorded, as depleted (" + depletedFinal + ")");
+    // That final year is booked at what was ACTUALLY spent, not at the request
+    // the balance could not meet: with fees, tax, an income and an expense in
+    // play the row still balances to the cent and ends at exactly $0.
+    var vt = P({ feeRate: 0.004, taxRate: 0.15, spending: { strategy: "vpw", vpwReturn: 0.034 },
+      incomes: [{ amount: 12000, start: 1, end: 30, cola: true, ss: true }],
+      adjustments: [{ kind: "expense", amount: 3000, start: 28, end: 30, cola: true }] });
+    var vr = core.traceHistorical(vt, data, 1966), last = vr.rows[vr.rows.length - 1];
+    assert(vr.success && last.year === 30 && last.end === 0 && last.shortfall === 0 && last.ranOut === false && last.depleted === true,
+      "VPW's final year completes the plan at exactly $0, with no shortfall");
+    assert(Math.abs(last.spend + last.expense + last.incomeTax + last.withdrawalTax - last.income - last.withdrawal) < 0.005 &&
+           Math.abs(last.start - last.withdrawal - last.fee) < 0.005,
+      "...and its row balances: spending + expenses + tax = income + withdrawal, and withdrawal + fee = the whole balance");
+    assert(last.spend < last.start - last.fee && last.spend > 0,
+      "...at the net amount left after fee and tax ($" + Math.round(last.spend) + " of $" + Math.round(last.start) + ")");
+    // With a floor, the final year completes only if the floor itself is
+    // affordable; otherwise it is a failure in the final year like any other.
+    var vfl = P({ feeRate: 0.001, spending: { strategy: "vpw", vpwReturn: 0.034, floor: 60000 } });
+    var sawFinalFail = false, sawFloorPaid = true;
+    core.runHistorical(vfl, data).sampleSeries.forEach(function (c) {
+      var rows = core.traceHistorical(vfl, data, c.startYear).rows, lr = rows[rows.length - 1];
+      if (!c.success && c.failedYear === 29) sawFinalFail = true;
+      if (c.success && lr.spend < 60000 * lr.deflStart - 0.01) sawFloorPaid = false;
+    });
+    assert(sawFloorPaid, "every surviving VPW+floor cycle paid at least its floor in the final year");
+    assert(sawFinalFail, "...and a cycle that cannot pay the floor in its final year fails there");
     var fail = core.runHistorical(P({ spending: { strategy: "constant", initial: 70000 } }), data);
     var f = fail.sampleSeries.filter(function (c) { return !c.success; })[0];
     var fl = core.traceHistorical(P({ spending: { strategy: "constant", initial: 70000 } }), data, f.startYear).rows.slice(-1)[0];
@@ -446,6 +502,38 @@ assert(rSafe.successRate === 1 && rSafe.lowestReal.min > 0,
     });
     assert(core.bucketInterest(40000, -0.01) < 0,
       "a negative rate is a LOSS on the parked cash, not floored at zero");
+    // The same must hold on the Monte Carlo path. Its sampler used to carry the
+    // T-bill rate as `rate > 0 ? rate : 0`, so a cash haircut reached the
+    // historical bucket but was dropped here: interest in good years, losses
+    // forgiven. The rates Monte Carlo resamples must be the dataset's own.
+    var mcx = self.SWR.mc;
+    var mp = P({ feeRate: 0, spending: { strategy: "percent", percent: 0.05, monthly: true } });
+    var cut = core.adjustReturns(data, { cash: -0.05 });
+    var off = core.validStartOffset(mp, cut), got = mcx.portfolioReturns(mp, cut).csh, neg = 0, same = true;
+    got.forEach(function (c, j) {
+      var want = cut.cash[off + j]; want = want == null ? 0 : want;
+      if (c !== want) same = false;
+      if (c < 0) neg++;
+    });
+    assert(same && neg > 50, "Monte Carlo's T-bill rates are the dataset's, negatives included (" + neg + " negative years)");
+    var o5 = { method: "bootstrap", trials: 400, seed: 7 };
+    var plain = mcx.run(mp, data, o5), hair = mcx.run(mp, cut, o5);
+    assert(hair.endingReal.median < plain.endingReal.median,
+      "...so a cash haircut lowers Monte Carlo's bucket-fed ending balance ($" +
+      Math.round(plain.endingReal.median) + " -> $" + Math.round(hair.endingReal.median) + ")");
+  })();
+
+  // ---- solver precision: fewer bisection steps can only land lower -----------
+  // The Monte Carlo solvers trade steps for trials. Each step's `lo` is a
+  // spending level that PASSED, so a coarser search must never return more
+  // than a finer one, and must stay within its own bracket of it.
+  (function () {
+    var sp = P({ feeRate: 0.001 });
+    var fine = core.solveSpending(sp, data, 0.95), coarse = core.solveSpending(sp, data, 0.95, null, null, 18);
+    assert(coarse <= fine + 1e-9 && fine - coarse <= sp.initialValue / Math.pow(2, 18) + 1e-9,
+      "an 18-step solve is at or just below the 28-step one ($" + coarse.toFixed(2) + " vs $" + fine.toFixed(2) + ")");
+    assert(core.runHistorical(P({ feeRate: 0.001, spending: { strategy: "constant", initial: coarse } }), data).successRate >= 0.95,
+      "...and the spending it returns still meets the target");
   })();
 
   // ---- return adjustments (sensitivity haircut) -----------------------------

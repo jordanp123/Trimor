@@ -102,7 +102,7 @@ sh tests/run.sh
 ```
 
 Three suites run: the engine + Monte Carlo math (validated against known results
-like the 4% rule ≈ 95–96% and SAFEMAX ≈ 3.8%), a UI smoke/integration test that
+like the 4% rule ≈ 97% and SAFEMAX ≈ 3.8%), a UI smoke/integration test that
 drives the real form-to-render path through a tiny DOM shim, and a **security
 suite** that loads the app with a hostile share-link and asserts the input bounds
 hold (see `SECURITY.md`). Alongside them, Python checks keep the Docker and

@@ -101,6 +101,41 @@ A(document.getElementById("runMonteCarlo").checked, "MC solve enabled the Monte 
 rendered("results still render after MC solve");
 A(document.getElementById("solveResult").hidden === false &&
   document.getElementById("solveResult").children.length > 0, "solver result box is shown with content");
+// The Monte Carlo solver searches on the SAME trials the run uses (up to
+// 10,000), so the re-run it triggers must meet the target it promised. It used
+// to search on 5,000 while the run used more, and the re-run then came in
+// under target more often than not.
+(function () {
+  function boxText() {
+    var box = document.getElementById("solveResult"), s = box.textContent || "";
+    (box.children || []).forEach(function (c) { s += c.textContent || ""; });
+    return s;
+  }
+  var mcNow = SWR.ui.__mc();
+  A(mcNow && mcNow.successRate >= 0.90,
+    "the re-run after a 90% Monte Carlo solve meets 90% on its own trials (" + (mcNow ? (mcNow.successRate * 100).toFixed(2) : "none") + "%)");
+  A(boxText().indexOf("came in at") < 0, "...so the solver box carries no shortfall note");
+  // When the full run does land under the promise (possible above 10,000
+  // trials, where the search is a subset), the box that made the promise says so.
+  SWR.ui.__solveCheck({ target: 0.999, box: "solveResult", what: "spending", ready: true });
+  A(/came in at \d+\.\d%, just under the 100% target/.test(boxText()) && boxText().indexOf("Lower spending a little") >= 0,
+    "a full run under the solver's target is called out in the solver's own box");
+  var before = boxText();
+  SWR.ui.__solveCheck({ target: 0.5, box: "solveResult", what: "spending", ready: true });
+  A(boxText() === before, "...and a run that meets its target adds nothing");
+})();
+
+// Success rates are FLOORED to a tenth, never rounded, and read 100 only when
+// nothing failed: "100%" used to appear over runs that contained failures.
+(function () {
+  var f = SWR.ui.__fmtRate;
+  A(f(1) === "100" && f(0.99996) === "99.9" && f(0.9996) === "99.9" && f(0.9995) === "99.9",
+    "a run with any failure never reads 100% (" + [f(1), f(0.99996), f(0.9996)].join(", ") + ")");
+  A(f(0.9496) === "94.9" && f(0.95) === "95.0" && f(0.94999) === "94.9",
+    "94.96% reads 94.9%, not a rounded-up 95.0% (" + [f(0.9496), f(0.95)].join(", ") + ")");
+  A(f(122 / 126) === "96.8" && f(19 / 20) === "95.0" && f(0) === "0.0" && f(1 / 3) === "33.3",
+    "ordinary rates are unchanged (" + [f(122 / 126), f(19 / 20), f(0), f(1 / 3)].join(", ") + ")");
+})();
 
 // Regression: the solve writeback must FLOOR to the $100 grid, never round to
 // nearest. The bisection returns the highest VERIFIED-passing spending; success
@@ -973,6 +1008,64 @@ A(textOf(document.getElementById("report")).indexOf("retirement simulation repor
   g("ssCutOn").checked = true; g("planYear").value = String(yr);
   g("runMonteCarlo").checked = true; g("mcMethod").value = "varblock";
   sync();
+})();
+
+// ===== out-of-range inputs are refused, never run and never silently clamped =====
+// Run as typed, several of these scored "100%" on a plan that fails 4 cycles in
+// 10 (a negative fee, a negative ceiling, a -10% withdrawal rate, a 250%
+// guardrail cut, a -100% VPW return via NaN), and a crafted share link can
+// carry any of them.
+(function () {
+  var g = function (id) { return document.getElementById(id); };
+  function reset() {
+    g("strategy").value = "constant"; g("initialSpend").value = "60000"; g("years").value = "30"; g("initialValue").value = "1000000";
+    g("feeRate").value = "0.10"; g("taxRate").value = "0"; g("allocStocks").value = "75"; g("allocBonds").value = "25";
+    ["allocGold", "allocCash", "allocCorp", "allocReit", "allocSmallcap"].forEach(function (id) { g(id).value = "0"; });
+    g("spendPercent").value = "4"; g("spendFloor").value = ""; g("spendCeiling").value = "";
+    g("vpwReturn").value = "3.4"; g("gkGuard").value = "20"; g("gkAdjust").value = "10"; g("capeA").value = "1.75"; g("capeB").value = "0.5";
+    g("inflationMode").value = "cpi"; g("fixedInflation").value = "3";
+    g("runMonteCarlo").checked = false; g("mcMethod").value = "varblock"; g("mcBlock").value = "5";
+    fire(g("strategy"), "change");
+  }
+  function refused(label, setup, expect) {
+    reset(); setup(); g("successBig").textContent = "UNTOUCHED";
+    fire(g("inputs"), "submit");
+    var m = g("formMsg").textContent;
+    A(m.indexOf(expect) >= 0 && g("successBig").textContent === "UNTOUCHED",
+      label + " is refused and nothing is rendered (" + (m || "ran: " + g("successBig").textContent) + ")");
+  }
+  var strat = function (s) { g("strategy").value = s; fire(g("strategy"), "change"); };
+  refused("a negative fee", function () { g("feeRate").value = "-5"; }, "Annual fees must be between 0% and 100%");
+  refused("a tax rate above 90%", function () { g("taxRate").value = "95"; }, "Tax rate must be between 0% and 90%");
+  refused("a negative tax rate", function () { g("taxRate").value = "-30"; }, "Tax rate must be between 0% and 90%");
+  refused("a leveraged 150/-50 allocation", function () { g("allocStocks").value = "150"; g("allocBonds").value = "-50"; },
+    "Each asset allocation must be between 0% and 100%");
+  refused("a negative withdrawal rate", function () { strat("percent"); g("spendPercent").value = "-10"; }, "Withdrawal rate must be between 0% and 100%");
+  refused("a negative spending ceiling", function () { strat("percent"); g("spendCeiling").value = "-50000"; }, "Spending floor and ceiling must be dollar amounts");
+  refused("a negative spending floor", function () { strat("vpw"); g("spendFloor").value = "-1"; }, "Spending floor and ceiling must be dollar amounts");
+  refused("a -100% VPW return", function () { strat("vpw"); g("vpwReturn").value = "-100"; }, "Assumed real return must be between -50% and 50%");
+  refused("a 250% guardrail cut", function () { strat("guyton"); g("gkAdjust").value = "250"; }, "Spending cut/raise must be between 0% and 50%");
+  refused("a negative guardrail band", function () { strat("guyton"); g("gkGuard").value = "-5"; }, "Guardrail band must be between 0% and 100%");
+  refused("a negative CAPE base rate", function () { strat("cape"); g("capeA").value = "-1"; }, "Base rate (a) must be between 0% and 50%");
+  refused("negative fixed inflation", function () { g("inflationMode").value = "fixed"; g("fixedInflation").value = "-2"; }, "Fixed inflation must be between 0% and 50%");
+  refused("a zero-year block length", function () { g("runMonteCarlo").checked = true; g("mcMethod").value = "block"; g("mcBlock").value = "0"; },
+    "Block length must be between 1 years and 30 years");
+  refused("a blank spending figure", function () { g("initialSpend").value = ""; }, "Enter your annual spending");
+  refused("an unreadable spending figure", function () { g("initialSpend").value = "1e999"; }, "Enter your annual spending");
+  // A field that is not in use is not checked: a stale value hidden under
+  // another strategy must not block the run.
+  reset(); g("spendPercent").value = "-10"; g("vpwReturn").value = "-100"; g("gkAdjust").value = "250"; g("fixedInflation").value = "-2"; g("mcBlock").value = "0";
+  fire(g("inputs"), "submit");
+  A(g("formMsg").textContent === "" && /^\d+\.\d%$/.test(g("successBig").textContent),
+    "out-of-range values in fields that are not in use do not block a constant-dollar run (" + g("successBig").textContent + ")");
+  // The edges themselves are valid.
+  reset(); g("feeRate").value = "0"; g("taxRate").value = "90"; g("inflationMode").value = "fixed"; g("fixedInflation").value = "0";
+  fire(g("inputs"), "submit");
+  A(g("formMsg").textContent === "", "the range edges (0% fee, 90% tax, 0% fixed inflation) are accepted");
+  reset(); g("initialSpend").value = "40000"; fire(g("inputs"), "submit");
+  A(g("formMsg").textContent === "" && /^\d+(\.\d)?%$/.test(g("successBig").textContent),
+    "and an in-range plan still runs (" + g("successBig").textContent + ")");
+  g("runMonteCarlo").checked = true;
 })();
 
 // ===== info toggles: explanations fold away, warnings never do =====

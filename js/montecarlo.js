@@ -38,6 +38,12 @@
   // data for all allocated assets (mirrors the historical engine's range). Also
   // carries that year's 3-month T-bill rate (csh) in lock-step, for the monthly
   // percentage strategy's cash bucket; null (pre-1928) coerces to 0.
+  //
+  // A NEGATIVE rate is kept, exactly as the historical path keeps it: it is a
+  // real loss on the parked cash. This used to read `> 0 ? rate : 0`, so a cash
+  // haircut under Return adjustments reached the historical bucket but was
+  // silently dropped here -- Monte Carlo credited interest in good years and
+  // forgave the losses, which can only flatter a plan.
   function portfolioReturns(p, data) {
     const startOff = core.validStartOffset(p, data);
     const Y = data.years.length;
@@ -45,7 +51,8 @@
     for (let j = startOff; j < Y; j++) {
       pr.push(core.weightedReturn(p.allocation, data, j));
       inf.push(data.inflation[j]);
-      csh.push(data.cash && data.cash[j] > 0 ? data.cash[j] : 0);
+      const c = data.cash ? data.cash[j] : null;
+      csh.push(c == null || isNaN(c) ? 0 : c);
     }
     return { pr, inf, csh };
   }
