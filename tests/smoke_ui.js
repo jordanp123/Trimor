@@ -1040,7 +1040,7 @@ A(textOf(document.getElementById("report")).indexOf("retirement simulation repor
   refused("a negative tax rate", function () { g("taxRate").value = "-30"; }, "Tax rate must be between 0% and 90%");
   refused("a leveraged 150/-50 allocation", function () { g("allocStocks").value = "150"; g("allocBonds").value = "-50"; },
     "Each asset allocation must be between 0% and 100%");
-  refused("a negative withdrawal rate", function () { strat("percent"); g("spendPercent").value = "-10"; }, "Withdrawal rate must be between 0% and 100%");
+  refused("a negative total-spending rate", function () { strat("percent"); g("spendPercent").value = "-10"; }, "Total spending must be between 0% and 100%");
   refused("a negative spending ceiling", function () { strat("percent"); g("spendCeiling").value = "-50000"; }, "Spending floor and ceiling must be dollar amounts");
   refused("a negative spending floor", function () { strat("vpw"); g("spendFloor").value = "-1"; }, "Spending floor and ceiling must be dollar amounts");
   refused("a -100% VPW return", function () { strat("vpw"); g("vpwReturn").value = "-100"; }, "Assumed real return must be between -50% and 50%");
@@ -1066,6 +1066,82 @@ A(textOf(document.getElementById("report")).indexOf("retirement simulation repor
   A(g("formMsg").textContent === "" && /^\d+(\.\d)?%$/.test(g("successBig").textContent),
     "and an in-range plan still runs (" + g("successBig").textContent + ")");
   g("runMonteCarlo").checked = true;
+})();
+
+// ===== results always say which inputs they belong to =====
+// Results belong to the inputs they were RUN with. Editing the form afterwards
+// used to leave them on screen with nothing saying so, and the browser's own
+// Print (Cmd/Ctrl+P cannot re-run) put the edited inputs above the old results
+// on paper: a $70k / 45-year / 2%-fee plan printed over "96.8% ... 30 years".
+(function () {
+  var g = function (id) { return document.getElementById(id); };
+  var sync = function () { fire(g("inputs"), "input"); };
+  function reportText() { (window._ev.beforeprint || []).forEach(function (f) { f(); }); return textOf(g("report")); }
+  g("runMonteCarlo").checked = false; g("strategy").value = "constant"; fire(g("strategy"), "change");
+  g("initialSpend").value = "40000"; g("years").value = "30"; g("feeRate").value = "0.10"; g("taxRate").value = "0";
+  g("partnerOn").checked = false; fire(g("partnerOn"), "change");
+  fire(g("inputs"), "submit");
+  var headline = g("successBig").textContent;
+  A(g("formMsg").textContent === "" && g("staleNote").hidden === true && SWR.ui.__stale() === false,
+    "right after a run the results match the inputs and no note shows");
+
+  // Settings that redraw live or only feed the solvers do not make results stale.
+  g("currentAge").value = "62"; fire(g("currentAge"), "input"); sync();
+  g("targetSuccess").value = "90"; sync();
+  A(g("staleNote").hidden === true, "changing age or the solver target does not mark the results out of date");
+
+  // The partner settings redraw the mortality chart at once, like age and sex.
+  A(g("rbdTitle").textContent === "Will your money outlast you?", "single-person chart before ticking Plan for two");
+  g("partnerOn").checked = true; fire(g("partnerOn"), "change");
+  A(g("rbdTitle").textContent === "Will your money outlast you both?" && g("partnerFields").hidden === false,
+    "ticking Plan for two redraws the chart for two immediately, with no re-run");
+  var both = parseFloat((g("rbdSub").textContent.match(/(\d+)% chance you've both died/) || [0, "NaN"])[1]);
+  g("partnerAge").value = "50"; fire(g("partnerAge"), "input");
+  var bothYounger = parseFloat((g("rbdSub").textContent.match(/(\d+)% chance you've both died/) || [0, "NaN"])[1]);
+  A(bothYounger < both, "...and a younger partner updates it again (" + both + "% -> " + bothYounger + "%)");
+  A(g("staleNote").hidden === true, "...none of which marks the simulation results out of date");
+  g("partnerOn").checked = false; fire(g("partnerOn"), "change");
+  A(g("rbdTitle").textContent === "Will your money outlast you?", "unticking it goes straight back to one life");
+
+  // Edit real inputs WITHOUT running.
+  g("initialSpend").value = "70000"; g("years").value = "45"; g("feeRate").value = "2"; sync();
+  A(g("staleNote").hidden === false && SWR.ui.__stale() === true,
+    "editing an input shows the out-of-date note beside the results");
+  A(g("successBig").textContent === headline, "...while the old results stay as they were (never faded or hidden)");
+  var rpt = reportText();
+  A(/Inputs were changed after this simulation was run/.test(rpt), "browser print says the inputs were changed after the run");
+  A(/Retirement length\s*30 years/.test(rpt) && rpt.indexOf("$40,000/yr") >= 0 && /Fees \/ effective tax rate\s*0\.1% \/ 0%/.test(rpt),
+    "...and describes the plan that was RUN: 30 years, $40,000, 0.1% fees");
+  A(rpt.indexOf("70,000") < 0 && rpt.indexOf("45 years") < 0,
+    "...with none of the edited figures above the old results");
+  var url = SWR.ui.__runShareUrl();
+  A(url.indexOf("70000") < 0 && url.indexOf('"years"') < 0 && url.indexOf("#") > 0,
+    "the report's QR link reopens the simulation that was run, not the edited form");
+
+  // An edit that is typed back to what was run is not stale.
+  g("initialSpend").value = "40000"; g("years").value = "30"; g("feeRate").value = "0.10"; sync();
+  A(g("staleNote").hidden === true, "typing the inputs back to what was run clears the note");
+  A(!/Inputs were changed/.test(reportText()), "...and the report no longer carries the warning");
+
+  // Running clears it and the report follows the new run.
+  g("initialSpend").value = "70000"; sync();
+  fire(g("inputs"), "submit");
+  A(g("staleNote").hidden === true && reportText().indexOf("$70,000/yr") >= 0 && !/Inputs were changed/.test(reportText()),
+    "after Run the note is gone and the report describes the new plan");
+  // A refused run leaves the old results up, so the note has to stay.
+  g("feeRate").value = "-1"; sync(); fire(g("inputs"), "submit");
+  A(g("formMsg").textContent.length > 0 && g("staleNote").hidden === false,
+    "a refused run keeps the note: the results on screen are still the earlier plan's");
+  g("feeRate").value = "0.10"; sync();
+
+  // "Total spending": the percentage plan's rate is what the plan spends.
+  g("strategy").value = "percent"; fire(g("strategy"), "change"); g("spendPercent").value = "4";
+  fire(g("inputs"), "submit");
+  A(reportText().indexOf("Total spending of 4% of the portfolio each year") >= 0,
+    "the report calls a percentage plan's rate total spending, not a withdrawal rate");
+  g("strategy").value = "constant"; fire(g("strategy"), "change"); g("initialSpend").value = "40000"; g("currentAge").value = "65";
+  g("targetSuccess").value = "95"; g("runMonteCarlo").checked = true;
+  fire(g("inputs"), "submit");
 })();
 
 // ===== info toggles: explanations fold away, warnings never do =====

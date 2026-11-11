@@ -274,7 +274,7 @@
       // [input id, what the message calls it, min, max, unit, only checked when in use]
       ["feeRate", "Annual fees", 0, 100, "%", true],
       ["taxRate", "Tax rate", 0, 90, "%", true],
-      ["spendPercent", "Withdrawal rate", 0, 100, "%", strat === "percent"],
+      ["spendPercent", "Total spending", 0, 100, "%", strat === "percent"],
       ["vpwReturn", "Assumed real return", -50, 50, "%", strat === "vpw"],
       ["capeA", "Base rate (a)", 0, 50, "%", strat === "cape"],
       ["capeB", "Earnings-yield weight (b)", 0, 10, "", strat === "cape"],
@@ -665,6 +665,9 @@
     $("sumMc").textContent = mc;
     $("sumSolve").textContent = "target " + round1(num("targetSuccess", 95)) + "% · " +
       (state.solveBasis === "montecarlo" ? "Monte Carlo" : "historical");
+    // Every path that can change an input ends here (the form-level listeners,
+    // row removal, the segmented controls), so this is where staleness is judged.
+    syncStale();
   }
 
   // ---------- running ----------
@@ -699,6 +702,11 @@
     renderAdjNote();
     renderTrialsCap();
     updateHash();
+    // What this run was run with -- see "results vs inputs".
+    state.runInputs = gather();
+    state.runKey = runInputsKey();
+    state.runReport = reportPlanSnapshot();
+    syncStale();
     msg(deferredMc
       ? "This link asks for a large Monte Carlo run (" + clampTrials().toLocaleString("en-US") +
         " trials over " + Math.round(num("years", 30)) + " years), so it wasn't started " +
@@ -975,7 +983,7 @@
         ? "Not achievable: even capping every year at your floor, the plan only reaches " + best +
           "% success — the floor itself is too high for " + tgt + "%. Lower the floor or the target."
         : "Not achievable: even with no floor this percentage-of-portfolio plan only reaches " + best +
-          "% success. Lower the target, the withdrawal %, or other spending.", false);
+          "% success. Lower the target, the total spending %, or other expenses.", false);
       return;
     }
 
@@ -1671,8 +1679,37 @@
     if (adj.length) o.adj = adj;
     return o;
   }
+  const encodeState = (o) => btoa(encodeURIComponent(JSON.stringify(o)));
   function updateHash() {
-    try { history.replaceState(null, "", "#" + btoa(encodeURIComponent(JSON.stringify(gather())))); } catch (e) {}
+    try { history.replaceState(null, "", "#" + encodeState(gather())); } catch (e) {}
+  }
+
+  // ---------- results vs inputs ----------
+  // Results on screen belong to the inputs they were RUN with. Once an input
+  // changes they describe a different plan than the form shows, and nothing
+  // said so: a screenshot could pair a $70k plan with a $40k plan's 96.8%, and
+  // the browser's own Print (Cmd/Ctrl+P, which cannot re-run) put exactly that
+  // on paper. So the run's inputs are remembered, a note appears beside the
+  // results the moment the form no longer matches them, and the printed report
+  // is built from the run, never from the form.
+  //
+  // These fields are deliberately NOT part of that comparison: the mortality
+  // inputs redraw their chart live, with no re-run, and the solver targets
+  // feed the solvers, not a run.
+  const NOT_RUN_INPUTS = ["currentAge", "sex", "longevity", "partnerOn", "partnerAge", "partnerSex", "targetSuccess", "gsolveTarget"];
+  function runInputsKey() {
+    const o = gather();
+    NOT_RUN_INPUTS.forEach((id) => { delete o[id]; });
+    return JSON.stringify(o);
+  }
+  const resultsAreStale = () => state.runKey != null && runInputsKey() !== state.runKey;
+  function syncStale() { $("staleNote").hidden = !resultsAreStale(); }
+  // The share link for the run on screen: the run's own inputs, plus the live
+  // mortality settings (whose chart is always current).
+  function runShareUrl() {
+    const o = Object.assign({}, state.runInputs || {}), live = gather();
+    NOT_RUN_INPUTS.forEach((id) => { if (id in live) o[id] = live[id]; else delete o[id]; });
+    return location.href.split("#")[0] + "#" + encodeState(o);
   }
   function applyState(o) {
     PERSIST.forEach((id) => {
@@ -1737,7 +1774,9 @@
     const st = $("strategy").value;
     let t;
     if (st === "percent") {
-      t = num("spendPercent", 4) + "% of portfolio, withdrawn " +
+      // "Total spending": the percentage is what the plan SPENDS. Income pays
+      // part of it and tax is withdrawn on top, so it is not the withdrawal.
+      t = "Total spending of " + num("spendPercent", 4) + "% of the portfolio each year, paid out " +
         ($("withdrawFreqVal").value === "monthly" ? "monthly (from a 3-mo T-bill cash bucket)" : "annually");
     } else if (st === "vpw") t = "VPW (amortization) at " + num("vpwReturn", 3.4) + "% assumed real return";
     else if (st === "cape") t = "CAPE-based: " + num("capeA", 1.75) + "% + " + num("capeB", 0.5) + " × 1/CAPE (current CAPE " + (currentCape() > 0 ? currentCape().toFixed(1) : "n/a") + ")";
@@ -1825,9 +1864,35 @@
   }
   const DISCLAIMER = "Educational tool — a historical/statistical simulation, not financial advice and not a guarantee of future results.";
 
+  // The plan as it stood when Run was pressed, in the report's own words.
+  // Captured by run(), because the browser's Print cannot re-run: building
+  // these rows from the live form at print time put edited inputs above the
+  // results of the plan that was actually simulated.
+  function reportPlanSnapshot() {
+    const alloc = [];
+    for (const id in ALLOC) { const v = num(id, 0); if (v > 0) alloc.push(v + "% " + ASSET_NAMES[ALLOC[id]]); }
+    return {
+      rows: [
+        ["Starting portfolio", fmtExact(num("initialValue", 0))],
+        ["Retirement length", Math.round(num("years", 30)) + " years"],
+        ["Allocation", alloc.join(" · ")],
+        ["Withdrawal strategy", strategyText()],
+        ["Fees / effective tax rate", num("feeRate", 0) + "% / " + num("taxRate", 0) +
+          "% (on withdrawals and on income marked taxed)"],
+        ["Inflation", $("inflationMode").value === "fixed" ? "fixed " + num("fixedInflation", 3) + "%/yr" : "historical CPI"],
+      ],
+      mc: $("mcMethod").value + ", " + clampTrials().toLocaleString("en-US") + " trials" +
+        ($("mcMethod").value === "block" ? ", block " + Math.round(num("mcBlock", 5))
+         : $("mcMethod").value === "varblock" ? ", streaks " + blockLo() + "–" + blockHi() + " yrs"
+         : "") + ", seed " + Math.round(num("mcSeed", 0)),
+      flows: readFlows("incomeRows", "income").concat(readFlows("adjustRows", null)).map(flowText),
+    };
+  }
+
   function buildSimReport() {
     const active = state.mode === "montecarlo" ? state.montecarlo : state.historical;
-    if (!active || !active.total) return false;
+    const snap = state.runReport;
+    if (!active || !active.total || !snap) return false;
     const rpt = $("report");
 
     const shots = snapCharts([
@@ -1840,16 +1905,18 @@
     rpt.appendChild(el("h1", { text: "WebSWR — retirement simulation report" }));
     rpt.appendChild(el("p", { class: "rpt-sub", text: "Generated " + new Date().toLocaleString() + " · showing the " + (state.mode === "montecarlo" ? "Monte Carlo" : "historical backtest") + " view" }));
 
+    // Edited since the run: say so before anything else, so the reader knows
+    // the page describes the simulation as it was run, not the form as it is.
+    if (resultsAreStale()) {
+      rpt.appendChild(el("p", { class: "rpt-stale",
+        text: "Inputs were changed after this simulation was run. This report shows the simulation as it was run — " +
+          "the changes are not in it. Press Run simulation, then print again, to include them." }));
+    }
+
     const plan = rptSection("Plan");
-    rptKV(plan, "Starting portfolio", fmtExact(num("initialValue", 0)));
-    rptKV(plan, "Retirement length", Math.round(num("years", 30)) + " years");
-    const alloc = [];
-    for (const id in ALLOC) { const v = num(id, 0); if (v > 0) alloc.push(v + "% " + ASSET_NAMES[ALLOC[id]]); }
-    rptKV(plan, "Allocation", alloc.join(" · "));
-    rptKV(plan, "Withdrawal strategy", strategyText());
-    rptKV(plan, "Fees / effective tax rate", num("feeRate", 0) + "% / " + num("taxRate", 0) +
-      "% (on withdrawals and on income marked taxed)");
-    rptKV(plan, "Inflation", $("inflationMode").value === "fixed" ? "fixed " + num("fixedInflation", 3) + "%/yr" : "historical CPI");
+    snap.rows.forEach((r) => rptKV(plan, r[0], r[1]));
+    // The mortality settings are read live: their chart redraws on every
+    // change without a re-run, so the live values ARE what the chart shows.
     rptKV(plan, "Age / sex (for mortality overlay)", Math.round(num("currentAge", 65)) + " / " + $("sex").value +
       ($("partnerOn").checked ? "; partner " + Math.round(num("partnerAge", 65)) + " / " + $("partnerSex").value +
         " (money must last to the second death)" : "") +
@@ -1866,18 +1933,12 @@
       " — results are history shifted by these offsets, not the historical record");
     if (adjS.inert.length) rptKV(plan, "Adjustments with no effect", adjS.inert.join(", ") +
       " — set, but this portfolio holds none of them");
-    if (state.montecarlo) {
-      rptKV(plan, "Monte Carlo settings", $("mcMethod").value + ", " + Math.round(num("mcTrials", 10000)).toLocaleString("en-US") + " trials" +
-        ($("mcMethod").value === "block" ? ", block " + Math.round(num("mcBlock", 5))
-         : $("mcMethod").value === "varblock" ? ", streaks " + blockLo() + "–" + blockHi() + " yrs"
-         : "") + ", seed " + Math.round(num("mcSeed", 0)));
-    }
+    if (state.montecarlo) rptKV(plan, "Monte Carlo settings", snap.mc);
     rpt.appendChild(plan);
 
     const flows = rptSection("Income & adjustments");
-    const inc = readFlows("incomeRows", "income"), adj = readFlows("adjustRows", null);
-    if (!inc.length && !adj.length) flows.appendChild(el("p", { class: "rpt-none", text: "None" }));
-    inc.concat(adj).forEach((f) => flows.appendChild(el("p", { class: "rpt-flow", text: flowText(f) })));
+    if (!snap.flows.length) flows.appendChild(el("p", { class: "rpt-none", text: "None" }));
+    snap.flows.forEach((t) => flows.appendChild(el("p", { class: "rpt-flow", text: t })));
     rpt.appendChild(flows);
 
     if (state.historical && state.historical.total) {
@@ -1895,8 +1956,9 @@
     // encoder treats the URL as opaque bytes (write-only; no parsing, no DOM
     // sinks) and gives up gracefully (null) past QR capacity -- the text
     // fallback below always states that the inputs are reproducible by hand.
-    updateHash();
-    const qrURI = SWR.qr ? SWR.qr.dataURL(location.href, 4) : null;
+    // It encodes the RUN's inputs (runShareUrl), so scanning it reopens the
+    // simulation on this page even if the form was edited afterwards.
+    const qrURI = SWR.qr ? SWR.qr.dataURL(runShareUrl(), 4) : null;
     if (qrURI) {
       const qfig = el("figure", { class: "rpt-qr" });
       qfig.appendChild(el("img", { src: qrURI, alt: "QR code of the share link for this simulation" }));
@@ -2101,7 +2163,6 @@
     $("mcTrials").max = String(MAX_TRIALS);
     $("mcTrials").addEventListener("input", renderTrialsCap);
     renderTrialsCap();
-    $("partnerOn").addEventListener("change", () => { $("partnerFields").hidden = !$("partnerOn").checked; });
     $("ybyStart").addEventListener("change", ybyRender);
     $("ybyCsv").addEventListener("click", ybyDownload);
     ["ssCutOn", "ssCutPct", "ssCutYear", "planYear"].forEach((id) =>
@@ -2118,10 +2179,16 @@
     $("currentAge").addEventListener("input", reRbd);
     $("sex").addEventListener("change", reRbd);
     $("longevity").addEventListener("change", reRbd);
+    // The partner settings too. They used to wait for the next run, so ticking
+    // "Plan for two" left the single-life chart -- the LESS cautious picture --
+    // on screen under a box that said the plan was for two.
+    $("partnerOn").addEventListener("change", () => { $("partnerFields").hidden = !$("partnerOn").checked; reRbd(); });
+    $("partnerAge").addEventListener("input", reRbd);
+    $("partnerSex").addEventListener("change", reRbd);
     $("addIncome").addEventListener("click", () => addFlowRow($("incomeRows"), false, {}));
     $("addAdjust").addEventListener("click", () => addFlowRow($("adjustRows"), true, {}));
     $("withdrawFreq").querySelectorAll("button").forEach((b) =>
-      b.addEventListener("click", () => { $("withdrawFreqVal").value = b.dataset.freq; syncFreq(); }));
+      b.addEventListener("click", () => { $("withdrawFreqVal").value = b.dataset.freq; syncFreq(); syncStale(); }));
     $("solveBtn").addEventListener("click", solve);
     $("gsolveBtn").addEventListener("click", gsolve);
     $("gsolveBasis").querySelectorAll("button").forEach((b) =>
@@ -2212,6 +2279,8 @@
     __runForTest: (fromLink) => run(null, { fromLink: !!fromLink }),
     __openFolds: () => openFoldsWithSettings(),
     __fmtRate: (rate) => fmtRate(rate),
+    __stale: () => resultsAreStale(),
+    __runShareUrl: () => runShareUrl(),
     __mc: () => state.montecarlo,
     // Arms the after-solve check exactly as applySolve does, against whatever
     // Monte Carlo result is on screen, so the note can be tested without

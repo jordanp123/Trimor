@@ -66,7 +66,7 @@ check(sorted(texts) == sorted(h for _, h in pairs),
 
 # Warnings and live status: never behind a toggle, never marked info-text.
 PROTECTED = ["ssCutHint", "mcTrialsCap", "fixedInflationHint", "spendRateHint", "capeRateNow",
-             "allocSum", "adjBadge", "gsolveResult", "solveResult", "formMsg"]
+             "allocSum", "adjBadge", "gsolveResult", "solveResult", "formMsg", "staleNote"]
 targets = [h for _, h in pairs]
 for pid in PROTECTED:
     check(pid not in targets and "info-text" not in tag_with_id(pid),

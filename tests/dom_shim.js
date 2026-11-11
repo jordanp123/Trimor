@@ -157,7 +157,7 @@ var KNOWN = {};
  "foldMc", "sumMc", "longevityInfoBtn", "longevityInfo", "partnerInfoBtn", "partnerInfo", "taxInfoBtn", "taxInfo",
  "freqInfoBtn", "capeInfoBtn", "capeInfo", "gsolveInfoBtn", "gsolveInfo", "incomeInfoBtn", "incomeInfo",
  "ssCutInfoBtn", "ssCutInfo", "adjustInfoBtn", "adjustInfo", "adjInfoBtn", "adjInfo", "mcBlockInfoBtn",
- "seedInfoBtn", "seedInfo", "foldSolve", "sumSolve", "mcOptions", "mcBlockWrap", "mcVarBlockWrap", "mcVarBlockHint", "adjBox", "adjBadge", "adjNote", "horizonNote", "mcTrialsCap", "ssCutFields", "ssCutHint", "partnerFields", "rbdTitle", "ybyCard", "ybyStart", "ybyCsv", "ybyNote", "ybyWrap", "runBtn", "solveBtn", "shareBtn",
+ "seedInfoBtn", "seedInfo", "foldSolve", "sumSolve", "staleNote", "mcOptions", "mcBlockWrap", "mcVarBlockWrap", "mcVarBlockHint", "adjBox", "adjBadge", "adjNote", "horizonNote", "mcTrialsCap", "ssCutFields", "ssCutHint", "partnerFields", "rbdTitle", "ybyCard", "ybyStart", "ybyCsv", "ybyNote", "ybyWrap", "runBtn", "solveBtn", "shareBtn",
  "capeRateNow", "withdrawFreq", "withdrawFreqHint", "printBtn", "report", "buildStamp", "dataWarning",
  "resetBtn", "solveBasis", "solveResult", "gsolveBtn", "gsolveBasis", "gsolveResult", "formMsg", "results", "successCard", "successKind", "successBig", "successLabel", "headStats",
  "progressWrap", "progressBar", "progressLabel", "trajMode", "dollarMode", "trajUnit", "trajCanvas", "histCanvas",

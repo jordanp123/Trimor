@@ -439,6 +439,9 @@ details.tool .solver { padding: 6px 0 4px; }
 #report { color: #111; font: 12px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 #report h1 { font-size: 19px; margin: 0 0 2px; color: #000; }
 #report .rpt-sub { margin: 0 0 14px; color: #555; font-size: 11px; }
+/* The form was edited after the run being printed: boxed and bold, because it
+   changes how every line below it should be read. */
+#report .rpt-stale { margin: 0 0 12px; padding: 7px 9px; border: 1.5px solid #000; font-weight: 600; font-size: 11.5px; line-height: 1.45; }
 #report h2 { font-size: 13px; margin: 14px 0 6px; padding-bottom: 3px; border-bottom: 1px solid #ccc; color: #000; text-transform: uppercase; letter-spacing: 0.04em; }
 #report .rpt-kv { display: flex; justify-content: space-between; gap: 16px; padding: 2.5px 0; border-bottom: 1px dotted #e4e4e4; }
 #report .rpt-k { color: #444; }

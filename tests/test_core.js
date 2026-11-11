@@ -534,6 +534,15 @@ assert(rSafe.successRate === 1 && rSafe.lowestReal.min > 0,
       "an 18-step solve is at or just below the 28-step one ($" + coarse.toFixed(2) + " vs $" + fine.toFixed(2) + ")");
     assert(core.runHistorical(P({ feeRate: 0.001, spending: { strategy: "constant", initial: coarse } }), data).successRate >= 0.95,
       "...and the spending it returns still meets the target");
+    // The step count is a work bound (each step is a full engine run), so the
+    // engine caps it itself rather than trusting whoever calls it.
+    var calls = 0, counting = function (pp, dd) { calls++; return core.runHistorical(pp, dd); };
+    core.solveSpending(sp, data, 0.95, counting, null, 1e9);
+    assert(calls <= 40, "solveSpending runs at most 40 steps however many are asked for (" + calls + ")");
+    calls = 0;
+    core.solveGuardrail(P({ feeRate: 0.001, spending: { strategy: "percent", percent: 0.04, ceiling: 60000 } }), data,
+      { solveFor: "floor", target: 0.95, runner: counting, iters: 1e9 });
+    assert(calls <= 42, "solveGuardrail likewise (" + calls + " runs, two of them the feasibility checks)");
   })();
 
   // ---- return adjustments (sensitivity haircut) -----------------------------

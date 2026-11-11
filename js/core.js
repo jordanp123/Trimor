@@ -742,9 +742,12 @@
   // `iters` trades precision for runs: each one halves the bracket, and `lo` is
   // only ever a spending level that PASSED, so fewer iterations can make the
   // answer slightly lower (the safe side), never higher.
+  // Capped here, not by the caller: each iteration is a full engine run, so the
+  // count is a work bound and must hold whatever is passed in.
+  const MAX_SOLVE_ITERS = 40;
   function solveSpending(p, data, target, runner, onProgress, iters) {
     runner = runner || runHistorical;
-    iters = iters > 0 ? iters : 28;
+    iters = iters > 0 ? Math.min(MAX_SOLVE_ITERS, Math.round(iters)) : 28;
     let lo = 0, hi = p.initialValue; // nobody sustainably spends the whole portfolio/yr
     for (let it = 0; it < iters; it++) {
       const mid = (lo + hi) / 2;
@@ -783,7 +786,7 @@
     const runner = opts.runner || runHistorical;
     const target = opts.target;
     const solveFor = opts.solveFor;
-    const iters = opts.iters || 30;
+    const iters = opts.iters > 0 ? Math.min(MAX_SOLVE_ITERS, Math.round(opts.iters)) : 30;
     const onProgress = opts.onProgress;
     // Always solve against the percentage strategy (the only one with guardrails
     // that drive failure); carry over the caller's given floor/ceiling.

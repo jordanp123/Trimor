@@ -99,7 +99,7 @@ allocation:
 | Starting portfolio | finite, ≤ $10T | `validate()` (rejects `Infinity`) |
 | Monte Carlo trials | ≤ **200,000** | `clampTrials` **and** a hard cap inside `mc.run` |
 | Monte Carlo a share link may start on its own | ≤ **3,000,000** trial-years (trials × years) | `LINK_MC_BUDGET` in `run()` |
-| Bisection solver | fixed 28 iterations | `solveSpending` |
+| Bisection solvers | ≤ **40** iterations, capped in the engine (28–30 by default, 18–22 for Monte Carlo) | `solveSpending`, `solveGuardrail` |
 
 The caps are applied in **two independent layers** (the UI and the engine), so
 the compute core stays safe even if it’s ever called directly. The heaviest run
