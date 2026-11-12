@@ -159,6 +159,7 @@
     series[0] = realSeries[0] = port;
     const realWithdrawals = new Array(N).fill(0); // gross spending each year, in year-0 dollars
     let failed = -1;
+    let floorYears = 0; // funded years whose spending the floor set (see below)
 
     for (let i = 0; i < R; i++) {
       const startBal = port;
@@ -291,6 +292,10 @@
         break;
       }
       port -= need;
+      // A year AT the spending floor: the floor set this year's spending -- the
+      // strategy alone would have paid less. Funded years only: a year the
+      // portfolio could not pay is a failure (above), not a year at the floor.
+      if (sp.floor != null && spend <= sp.floor * cumInfl * (1 + 1e-9)) floorYears++;
 
       // 3) Grow the surviving balance, advance inflation.
       port *= 1 + r;
@@ -329,6 +334,7 @@
       observedYears: R,   // < N means history ran out before the plan did
       complete: R >= N,
       realWithdrawals,
+      floorYears,
     };
   }
 
@@ -445,6 +451,13 @@
         ? { median: pctl(floorRatio, 50), p10: pctl(floorRatio, 10), min: floorRatio[0] }
         : null,
       avgMedian: avgPer.length ? pctl(avgPer, 50) : 0,
+      // How long a plan with a spending floor lives ON it: per cycle, the
+      // funded years whose spending the floor set; the mean and the standard
+      // deviation of that count across every cycle (or trial) in the result.
+      floorYears: p.spending.floor != null && total ? (function () {
+        const n = cycles.map((c) => c.floorYears || 0);
+        return { mean: stats.mean(n), sd: stats.stdev(n) };
+      })() : null,
     };
 
     // Identify representative cycles by REAL ending value -- purchasing power,

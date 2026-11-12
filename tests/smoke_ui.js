@@ -1144,6 +1144,29 @@ A(textOf(document.getElementById("report")).indexOf("retirement simulation repor
   fire(g("inputs"), "submit");
 })();
 
+// ===== percentage of portfolio: years at the spending floor =====
+(function () {
+  var g = function (id) { return document.getElementById(id); };
+  function details() { return textOf(g("detailBody")); }
+  function report() { (window._ev.beforeprint || []).forEach(function (f) { f(); }); return textOf(g("report")); }
+  g("runMonteCarlo").checked = false;
+  g("strategy").value = "percent"; fire(g("strategy"), "change");
+  g("spendPercent").value = "4"; g("spendFloor").value = "35000"; g("spendCeiling").value = "";
+  fire(g("inputs"), "submit");
+  var d = details();
+  A(g("formMsg").textContent === "" && /Years at floor \(average\)\s*\d+\.\d of 30/.test(d) && /Years at floor \(std\. dev\.\)\s*\d+\.\d years/.test(d),
+    "a floored percentage plan shows years at the floor (average and std. dev.) under Annual spending");
+  A(/Years at the spending floor \(average \/ std\. dev\.\)\s*\d+\.\d of 30 \/ \d+\.\d years/.test(report()),
+    "...and the printed report carries the same figures");
+  g("spendFloor").value = ""; fire(g("inputs"), "submit");
+  A(details().indexOf("Years at floor") < 0 && report().indexOf("spending floor (average") < 0,
+    "without a floor, neither the panel nor the report shows them");
+  g("strategy").value = "vpw"; fire(g("strategy"), "change"); g("spendFloor").value = "35000"; fire(g("inputs"), "submit");
+  A(details().indexOf("Years at floor") < 0, "they are shown for percentage of portfolio only, as asked");
+  g("spendFloor").value = ""; g("strategy").value = "constant"; fire(g("strategy"), "change");
+  g("runMonteCarlo").checked = true; fire(g("inputs"), "submit");
+})();
+
 // ===== info toggles: explanations fold away, warnings never do =====
 (function () {
   var g = function (id) { return document.getElementById(id); };

@@ -523,6 +523,56 @@ assert(rSafe.successRate === 1 && rSafe.lowestReal.min > 0,
       Math.round(plain.endingReal.median) + " -> $" + Math.round(hair.endingReal.median) + ")");
   })();
 
+  // ---- years at the spending floor (percentage of portfolio) --------------
+  // Per cycle: the funded years whose spending the floor set. Checked against a
+  // count taken straight from each cycle's year-by-year trace -- the same set of
+  // cycles the result is built from (complete ones plus ones that ran dry before
+  // the data ended; still-solvent truncated ones are not in it).
+  (function () {
+    function traceCounts(p, floor) {
+      var out = [];
+      for (var y = core.firstStartYear(p, data); y <= data.years[data.years.length - 1]; y++) {
+        var tr = core.traceHistorical(p, data, y);
+        if (!tr.complete && tr.success) continue;
+        out.push(tr.rows.filter(function (r) { return !r.ranOut && r.spend <= floor * r.deflStart * (1 + 1e-9); }).length);
+      }
+      return out;
+    }
+    var fp = P({ feeRate: 0.001, spending: { strategy: "percent", percent: 0.04, floor: 35000 } });
+    var s = core.runHistorical(fp, data), counts = traceCounts(fp, 35000);
+    var m = stats.mean(counts), sd = stats.stdev(counts);
+    assert(counts.length === s.total, "floor-year counts cover every cycle in the result (" + counts.length + " of " + s.total + ")");
+    assert(s.spending.floorYears && Math.abs(s.spending.floorYears.mean - m) < 1e-9 && Math.abs(s.spending.floorYears.sd - sd) < 1e-9,
+      "average and SD of years at the floor match the trace count (" + m.toFixed(2) + " avg, " + sd.toFixed(2) + " SD)");
+    assert(m > 0 && sd > 0 && m < fp.years, "a $35k floor on a 4% plan binds in some years, not all");
+    // The year a floored plan runs out is not a year "at the floor": it was not paid.
+    var failing = P({ feeRate: 0.001, spending: { strategy: "percent", percent: 0.04, floor: 60000 } });
+    var fs = core.runHistorical(failing, data), fc = traceCounts(failing, 60000);
+    assert(fs.failed > 0 && Math.abs(fs.spending.floorYears.mean - stats.mean(fc)) < 1e-9,
+      "a plan whose floor exhausts it counts only the floor years it paid (" + fs.failed + " failures)");
+    // Floor equal to the ceiling: spending IS the floor, every funded year.
+    var flat = P({ feeRate: 0.001, spending: { strategy: "percent", percent: 0.04, floor: 40000, ceiling: 40000 } });
+    var fl = core.runHistorical(flat, data), funded = [];
+    for (var y = core.firstStartYear(flat, data); y <= data.years[data.years.length - 1]; y++) {
+      var tr = core.traceHistorical(flat, data, y);
+      if (!tr.complete && tr.success) continue;
+      funded.push(tr.rows.filter(function (r) { return !r.ranOut; }).length);
+    }
+    assert(Math.abs(fl.spending.floorYears.mean - stats.mean(funded)) < 1e-9,
+      "with floor = ceiling every funded year is at the floor (" + fl.spending.floorYears.mean.toFixed(2) + ")");
+    // A floor that never binds: zero years, zero spread.
+    var low = core.runHistorical(P({ feeRate: 0.001, spending: { strategy: "percent", percent: 0.04, floor: 1 } }), data);
+    assert(low.spending.floorYears.mean === 0 && low.spending.floorYears.sd === 0, "a $1 floor is never the binding amount (0 / 0)");
+    // No floor, or a strategy without one: nothing to report.
+    assert(core.runHistorical(P({ spending: { strategy: "percent", percent: 0.04 } }), data).spending.floorYears === null,
+      "no floor -> no floor-year statistic");
+    assert(core.runHistorical(P({}), data).spending.floorYears === null, "constant-dollar plans have no floor-year statistic");
+    // Monte Carlo carries it too, from the same per-trial count.
+    var ms = self.SWR.mc.run(fp, data, { method: "bootstrap", trials: 800, seed: 3 });
+    assert(ms.spending.floorYears && isFinite(ms.spending.floorYears.mean) && ms.spending.floorYears.mean > 0 && isFinite(ms.spending.floorYears.sd),
+      "Monte Carlo reports years at the floor too (" + ms.spending.floorYears.mean.toFixed(2) + " avg)");
+  })();
+
   // ---- solver precision: fewer bisection steps can only land lower -----------
   // The Monte Carlo solvers trade steps for trials. Each step's `lo` is a
   // spending level that PASSED, so a coarser search must never return more

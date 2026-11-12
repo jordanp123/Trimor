@@ -1415,6 +1415,13 @@
           rows.push(kv("Leanest year", money(lean.median)));
         }
       }
+      // Percentage of portfolio with a spending floor: how many years the plan
+      // spends AT the floor (the percentage alone would have paid less), as an
+      // average across cycles with the standard deviation around it.
+      if (sp.strategy === "percent" && sp.floorYears) {
+        rows.push(kv("Years at floor (average)", sp.floorYears.mean.toFixed(1) + " of " + s.years));
+        rows.push(kv("Years at floor (std. dev.)", sp.floorYears.sd.toFixed(1) + " years"));
+      }
       rows.push(kv("Lifetime average", money(sp.avgMedian)));
       blocks.push(block("Annual spending · today's $", rows));
     }
@@ -1834,6 +1841,10 @@
              : sp.hasFloor ? " — your spending floor means ruin is possible in a worse sequence"
              : SELF_LIMITING.indexOf(sp.strategy) >= 0 ? " — this plan cuts income rather than running out"
              : " — the guardrails cut income, and this plan can still run out in a worse sequence"));
+      }
+      if (sp.strategy === "percent" && sp.floorYears) {
+        rptKV(sec, "Years at the spending floor (average / std. dev.)",
+          sp.floorYears.mean.toFixed(1) + " of " + s.years + " / " + sp.floorYears.sd.toFixed(1) + " years");
       }
       if (sp.avgMedian) rptKV(sec, "Average yearly spending (median cycle)", fmtExact(sp.avgMedian));
     }
