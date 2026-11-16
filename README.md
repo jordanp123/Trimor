@@ -8,7 +8,7 @@ server, no tracking, and **zero runtime dependencies**.
 ## Features
 
 - **Historical engine** — replays every N-year retirement that fits the dataset
-  (e.g. a 30-year plan tested starting 1871, 1872, … 1996).
+  (e.g. with data through 2025, a 30-year plan is tested starting 1871, 1872, … 1996).
 - **Monte Carlo** — three methods, run off the UI thread in a Web Worker:
   *bootstrap* (resample years), *block bootstrap* (resample runs of consecutive
   years), and *parametric* (normal distribution fit to history).
@@ -140,12 +140,41 @@ The pipeline re-validates the reconstruction against Damodaran on overlapping
 years on every run and refuses to emit data if a source’s format drifts, so you
 can re-run it and `git diff` the JSON to see exactly what changed.
 
+### Once a year
+
+The data grows by one year every January. A deployed site takes that in its
+stride; a few things with a date on them still need a person:
+
+- **January: nothing to do on a deployed site.** The nightly pipeline accepts a
+  newly published year by itself, as soon as that year's December CPI exists. It
+  still refuses a year that is in progress, and a dataset that has lost years.
+  The Help text's year range and cycle counts are filled in from the data. If
+  the newest year has not arrived by March, the site says so in its data notice.
+  (`tools/test_pipeline.py` runs these rules against the dates that matter.)
+- **When you regenerate the committed data files** (the `fetch_*.py --refresh`
+  commands above), tests that quote exact cycle counts or start years need
+  re-pinning to the new final year. That is deliberate: the figures get looked
+  at once a year.
+- **June: the Social Security Trustees Report.** The default benefit cut (share
+  paid, and from which year) lives in `index.html`; the hint and the Help text
+  cite the report's year.
+- **When SSA publishes a new period life table**, save the page from a browser
+  and run `fetch_mortality.py` as described above. The Help text also quotes two
+  figures from the Trustees' cohort table.
+- **If the US corporate tax rate changes**, update `TAX_STEPS` and `TAX_NOW` in
+  `tools/fetch_cape.py` (they feed the adjusted CAPE used as a cross-check).
+
+The pipeline is deliberately strict: if a source changes its format, or a value
+falls outside its sanity range, the run stops and the site keeps serving its
+last good build. Nothing announces that, so check `update.log` (or the
+"Updated" date on the page) now and then.
+
 ## Project layout
 
 ```
 index.html            app shell, strict Content-Security-Policy, Help modal
 css/styles.css        all styles (system fonts only — no web fonts)
-js/market-data.js     GENERATED: 1871–2025 returns + inflation (self.SWR_DATA)
+js/market-data.js     GENERATED: returns + inflation, 1871 to the last complete year (self.SWR_DATA)
 js/stats.js           RNG, percentiles, covariance, Cholesky
 js/core.js            simulation engine, withdrawal strategies, solver
 js/montecarlo.js      bootstrap / block / parametric Monte Carlo

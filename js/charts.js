@@ -8,12 +8,14 @@
   const SWR = (root.SWR = root.SWR || {});
   const FONT = "12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
 
+  // Each unit takes over where the one below it would ROUND up to 1000: without
+  // that, $999,600 printed as "$1000k" and $999,996,000 as "$1000.00M".
   function fmtMoney(x) {
     const a = Math.abs(x), s = x < 0 ? "-$" : "$";
-    if (a >= 1e12) return s + (a / 1e12).toFixed(2) + "T"; // keeps near-cap values comma-free
-    if (a >= 1e9) return s + (a / 1e9).toFixed(2) + "B";
-    if (a >= 1e6) return s + (a / 1e6).toFixed(2) + "M";
-    if (a >= 1e3) return s + (a / 1e3).toFixed(a >= 1e5 ? 0 : 1) + "k";
+    if (a >= 999.995e9) return s + (a / 1e12).toFixed(2) + "T"; // keeps near-cap values comma-free
+    if (a >= 999.995e6) return s + (a / 1e9).toFixed(2) + "B";
+    if (a >= 999.5e3) return s + (a / 1e6).toFixed(2) + "M";
+    if (a >= 999.5) return s + (a / 1e3).toFixed(a >= 99950 ? 0 : 1) + "k";
     return s + Math.round(a);
   }
 

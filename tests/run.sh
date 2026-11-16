@@ -30,6 +30,14 @@ runbundle "security (hostile hash + input caps)" \
   "$DIR/js/core.js" "$DIR/js/montecarlo.js" "$DIR/js/mortality.js" "$DIR/js/amortize.js" "$DIR/js/compound.js" "$DIR/js/charts.js" "$DIR/js/qrcode.js" \
   "$DIR/js/ui.js" "$DIR/tests/security_test.js"
 
+# The data pipeline against the calendar: a newly published year must be
+# accepted with nobody editing the pipeline (it once pinned "ends 2025", which
+# would have stopped every deploy in January), and a year still in progress or
+# a dataset that lost years must be refused. No network.
+echo "== data pipeline (year rollover, year parsing) =="
+if python3 "$DIR/tools/test_pipeline.py"; then :; else fail=1; fi
+echo ""
+
 # The stdlib .xls reader the data pipeline uses for its Shiller cross-check.
 echo "== xls reader (OLE2 + BIFF8) =="
 if python3 "$DIR/tools/test_xls.py"; then :; else fail=1; fi

@@ -668,7 +668,7 @@ function state_worst() {
   A(note.hidden === false && note.textContent.indexOf("years you have left") >= 0,
     "floored VPW explains that the length is part of the spending rule");
   A(note.textContent.indexOf("roughly comparable") >= 0 &&
-    note.textContent.indexOf("under 2 percentage points") >= 0,
+    /up to about 3 points where success is 90% or more, and up to about (4|10) points on plans that fail often/.test(note.textContent),
     "...and quantifies the effect rather than just hand-waving");
 
   // Floorless VPW cannot run dry, so nothing can be reclassified: no caveat.
@@ -1165,6 +1165,54 @@ A(textOf(document.getElementById("report")).indexOf("retirement simulation repor
   A(details().indexOf("Years at floor") < 0, "they are shown for percentage of portfolio only, as asked");
   g("spendFloor").value = ""; g("strategy").value = "constant"; fire(g("strategy"), "change");
   g("runMonteCarlo").checked = true; fire(g("inputs"), "submit");
+})();
+
+// ===== facts in the Help text follow the dataset =====
+// The data grows by a year every January. The Help text's span, start years
+// and cycle count are filled in from the data the page is running on, so they
+// can never fall a year behind it.
+(function () {
+  var g = function (id) { return document.getElementById(id); };
+  var D = self.SWR_DATA, y0 = D.years[0], y1 = D.years[D.years.length - 1];
+  var full30 = SWR.core.runHistorical({ initialValue: 1e6, years: 30, allocation: { stocks: 0.75, bonds: 0.25 }, feeRate: 0, taxRate: 0,
+    spending: { strategy: "constant", initial: 1 }, incomes: [], adjustments: [] }, D);
+  A(g("factSpan").textContent === y0 + "–" + y1, "Help states the data's real span (" + g("factSpan").textContent + ")");
+  A(g("factStarts30").textContent === y0 + ", " + (y0 + 1) + ", … " + full30.startYears.last,
+    "Help's 30-year start years end where the engine's do (" + g("factStarts30").textContent + ")");
+  A(g("factCycles30").textContent === String(full30.fullCycles),
+    "Help's cycle count is the engine's count of full 30-year cycles (" + g("factCycles30").textContent + ")");
+})();
+
+// ===== money labels never read "$1000k" =====
+(function () {
+  var f = SWR.charts.fmtMoney;
+  A(f(999400) === "$999k" && f(999600) === "$1.00M" && f(999999) === "$1.00M",
+    "a value that would round to 1000k is shown in millions (" + [f(999400), f(999600)].join(", ") + ")");
+  A(f(999996000) === "$1.00B" && f(999.4) === "$999" && f(999.6) === "$1.0k" && f(99960) === "$100k",
+    "...and likewise at every other unit boundary (" + [f(999996000), f(999.6), f(99960)].join(", ") + ")");
+  A(f(40000) === "$40.0k" && f(1780000) === "$1.78M" && f(0) === "$0" && f(-2500) === "-$2.5k",
+    "ordinary values are unchanged (" + [f(40000), f(1780000), f(0), f(-2500)].join(", ") + ")");
+})();
+
+// ===== loan and compound calculators refuse what they would otherwise clamp =====
+(function () {
+  var g = function (id) { return document.getElementById(id); };
+  function loan(setup) { g("loanAmount").value = "350000"; g("loanApr").value = "6.5"; g("loanTerm").value = "30"; g("loanExtra").value = "";
+    setup(); g("loanPayment").textContent = "UNTOUCHED"; fire(g("loanInputs"), "submit"); return g("loanMsg").textContent; }
+  A(loan(function () {}) === "" && g("loanPayment").textContent.indexOf("2,212.24") >= 0, "a normal loan still computes ($2,212.24)");
+  A(loan(function () { g("loanTerm").value = "150"; }).indexOf("100 years or less") >= 0 && g("loanPayment").textContent === "UNTOUCHED",
+    "a 150-year term is refused, not silently run as 100 years");
+  A(loan(function () { g("loanApr").value = "250"; }).indexOf("between 0% and 100%") >= 0, "a 250% APR is refused, not run as 100%");
+  A(loan(function () { g("loanApr").value = "-3"; }).indexOf("between 0% and 100%") >= 0, "a negative APR is refused, not run as 0%");
+  A(loan(function () { g("loanApr").value = "0"; }) === "", "a 0% loan is still allowed");
+  function comp(setup) { g("compPrincipal").value = "1500"; g("compAddition").value = "0"; g("compRate").value = "5"; g("compYears").value = "5"; g("compTimes").value = "1";
+    setup(); g("compFv").textContent = "UNTOUCHED"; fire(g("compoundInputs"), "submit"); return g("compMsg").textContent; }
+  A(comp(function () {}) === "" && g("compFv").textContent.indexOf("1,914.42") >= 0, "a normal compound run still computes ($1,914.42)");
+  A(comp(function () { g("compRate").value = "150"; }).indexOf("Rate must be between 0% and 100%") >= 0 && g("compFv").textContent === "UNTOUCHED",
+    "a 150% rate is refused, not run as 100%");
+  A(comp(function () { g("compYears").value = "500"; }).indexOf("Years must be between 1 and 200") >= 0, "500 years is refused, not run as 200");
+  A(comp(function () { g("compTimes").value = "0"; }).indexOf("between 1 and 365 times") >= 0, "compounding 0 times a year is refused, not run as 1");
+  loan(function () {}); comp(function () {});
 })();
 
 // ===== info toggles: explanations fold away, warnings never do =====

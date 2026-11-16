@@ -573,6 +573,29 @@ assert(rSafe.successRate === 1 && rSafe.lowestReal.min > 0,
       "Monte Carlo reports years at the floor too (" + ms.spending.floorYears.mean.toFixed(2) + " avg)");
   })();
 
+  // ---- VPW and Guyton: a LONGER plan can score higher ----------------------
+  // Their spending rule depends on the plan length, so a longer plan spends less
+  // each year and can pass start years the shorter plan fails. The page and the
+  // Help text quote how large that gets ("about 4 points" for VPW with a floor,
+  // "about 10" for Guyton-Klinger, "about 3" where success is 90%+). These are
+  // the worst cases found by the sweep those numbers came from; if the data
+  // changes them, the quoted figures have to be re-measured, not left to rot.
+  (function () {
+    function rate(a, sp, N) { return core.runHistorical(P({ years: N, allocation: a, feeRate: 0.001, spending: sp }), data).successRate * 100; }
+    var gk = { strategy: "guyton", initial: 60000, guard: 0.2, gkAdjust: 0.1 }, b = { stocks: 0.25, bonds: 0.75 };
+    var gRise = rate(b, gk, 54) - rate(b, gk, 53);
+    assert(gRise > 9 && gRise < 11.5, "Guyton worst case: a 54-year plan scores about 10 points above a 53-year one (+" + gRise.toFixed(1) + ")");
+    var vp = { strategy: "vpw", vpwReturn: 0.05, floor: 30000 }, h = { stocks: 0.5, bonds: 0.5 };
+    var vRise = rate(h, vp, 44) - rate(h, vp, 43);
+    assert(vRise > 3 && vRise < 5, "VPW+floor worst case: 44 years scores about 4 points above 43 (+" + vRise.toFixed(1) + ")");
+    var gSafe = rate(h, gk, 47) - rate(h, gk, 46);
+    assert(gSafe > 2 && gSafe < 3.5 && rate(h, gk, 46) >= 90, "where success is 90%+, the worst rise found is about 3 points (+" + gSafe.toFixed(1) + ")");
+    // The strategies whose draw depends only on the balance never do this.
+    var prev = 101, rises = 0;
+    for (var N = 20; N <= 60; N += 2) { var x = rate(b, { strategy: "constant", initial: 45000 }, N); if (x > prev + 1e-9) rises++; prev = x; }
+    assert(rises === 0, "a constant-dollar plan never scores higher when it is made longer");
+  })();
+
   // ---- solver precision: fewer bisection steps can only land lower -----------
   // The Monte Carlo solvers trade steps for trials. Each step's `lo` is a
   // spending level that PASSED, so a coarser search must never return more

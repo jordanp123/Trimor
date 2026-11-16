@@ -52,7 +52,7 @@ CACHE = os.path.join(HERE, ".cache")
 DAM_URL = "https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/histretSP.html"
 # CPI-U (all items, NSA), monthly, from multpl's Shiller series -- the SAME BLS
 # CPIAUCNS series FRED publishes (verified: Dec->Dec inflation matches FRED to
-# <0.003pp across 1929-2025). We source it here rather than from FRED because
+# <0.003pp across 1929-2025, when checked). We source it here rather than from FRED because
 # FRED's Akamai edge TARPITS non-browser TLS clients (it accepts the connection
 # then never replies -> read timeout), whereas multpl serves it reliably; the
 # sibling fetch_cape.py already pulls this exact page every day.
@@ -197,7 +197,10 @@ def parse_pct(s):
 def parse_damodaran(html):
     p = TableParser()
     p.feed(html)
-    year_re = re.compile(r"^(19[2-9]\d|20[0-2]\d)$")
+    # Any 1920-2099 year label. This used to stop at 2029, which would have made
+    # the 2030 row vanish without an error; span_checks() below is what decides
+    # which years may actually ship.
+    year_re = re.compile(r"^(19[2-9]\d|20\d\d)$")
 
     header = next((r for r in p.rows if "S&P 500" in " ".join(r) and len(r) >= 8), None)
     if not header:
@@ -259,7 +262,7 @@ def multpl_series(text):
     for r in p.rows:
         if len(r) < 2:
             continue
-        m = re.search(r"(18[6-9]\d|19\d\d|20[0-2]\d)", r[0])
+        m = re.search(r"(18[6-9]\d|19\d\d|20\d\d)", r[0])
         if not m:
             continue
         v = r[1].replace(",", "").replace("%", "").replace("$", "").strip()
@@ -533,18 +536,60 @@ def cpi_anchors(years, inflation):
           f"(worst {worst * 100:.2f}pp, tolerance {CPI_ANCHOR_TOL * 100:.2f}pp)")
 
 
-def sanity(years, series, inflation):
+# The last year the dataset has ever shipped with. It may grow past this; it
+# must never shrink below it (that would mean a source lost rows).
+BASELINE_LAST = 2025
+
+
+def span_checks(years, today=None):
+    """Which years the dataset may cover, as (name, passed) pairs.
+
+    The dataset GROWS: every January a new calendar year is published and must
+    be accepted without anyone editing this file. These checks used to pin the
+    final year ("ends 2025", "year count == 155"), which would have aborted
+    every nightly run -- and with it every deploy -- from the day the 2026 row
+    appeared. They now state the actual rules:
+      * never fewer years than have already shipped;
+      * never a year that is still in progress -- a partial year's return
+        would be simulated as a full one. (main() only keeps a year once its
+        DECEMBER CPI exists, so this is a second line of defence.)
+    """
+    today = today or date.today()
+    last = years[-1] if years else None
+    return [
+        ("starts %d" % EXT_FIRST, bool(years) and years[0] == EXT_FIRST),
+        ("contiguous years", bool(years) and years == list(range(years[0], years[-1] + 1))),
+        ("ends no earlier than %d (got %s)" % (BASELINE_LAST, last), last is not None and last >= BASELINE_LAST),
+        ("ends with a COMPLETE year, %d or earlier (got %s)" % (today.year - 1, last),
+         last is not None and last <= today.year - 1),
+    ]
+
+
+def currency_check(years, today=None):
+    """Advisory, never blocking: is the newest year the one we should have by now?
+
+    The previous year's figures appear in January; by March they should be in.
+    Older data is still CORRECT, just short, so this does not stop a deploy --
+    it ships with the data and the site says so (see renderDataHealth in ui.js).
+    """
+    today = today or date.today()
+    expected = today.year - 1 if (today.month, today.day) >= (3, 1) else today.year - 2
+    if years[-1] >= expected:
+        return {"name": "Data currency", "status": "ok",
+                "detail": f"Market data runs through {years[-1]}, the latest year expected."}
+    return {"name": "Data currency", "status": "stale",
+            "detail": f"Market data ends in {years[-1]}, but {expected} should be available by now. "
+                      "Results are still correct for the years covered; the newest year is missing."}
+
+
+def sanity(years, series, inflation, today=None):
     """Loud assertions so a corrupted download cannot silently ship."""
     idx = {y: i for i, y in enumerate(years)}
     S = lambda k, y: series[k][idx[y]]
     I = lambda y: inflation[idx[y]]
     n_ext = EXT_LAST - EXT_FIRST + 1  # reconstructed (pre-1928) span
 
-    checks = [
-        ("year count == 155", len(years) == 2025 - EXT_FIRST + 1),
-        ("starts 1871", years[0] == EXT_FIRST),
-        ("ends 2025", years[-1] == 2025),
-        ("contiguous years", years == list(range(years[0], years[-1] + 1))),
+    checks = span_checks(years, today) + [
         ("1871 stocks present & sane", S("stocks", 1871) is not None and -0.6 < S("stocks", 1871) < 0.7),
         ("1928 stocks ~ +43.8% (Damodaran)", abs(S("stocks", 1928) - 0.4381) < 0.003),
         ("1931 Depression stocks < -40%", S("stocks", 1931) < -0.40),
@@ -658,7 +703,7 @@ def main():
     crosscheck(ms["price"], ms["yield"], ms["cpi"], ms["tnx"], years28, series28, infl_cpi)
     ext = build_extension(ms["price"], ms["yield"], ms["cpi"], ms["tnx"])
 
-    # Merge eras into full 1871-2025 arrays (null pre-1928 for assets we can't reconstruct).
+    # Merge eras into full 1871-onward arrays (null pre-1928 for assets we can't reconstruct).
     ext_yrs = list(range(EXT_FIRST, EXT_LAST + 1))
     pad = [None] * len(ext_yrs)
     years = ext_yrs + years28
@@ -677,7 +722,8 @@ def main():
     # result ships with the data and the site surfaces anything but "ok".
     print("Live cross-checks against independent sources (advisory -- never block):")
     validation = [bls_crosscheck(years, inflation, refresh),
-                  shiller_crosscheck(years, inflation, refresh)]
+                  shiller_crosscheck(years, inflation, refresh),
+                  currency_check(years)]
     for v in validation:
         print(f"  [{v['status'].upper()}] {v['name']}: {v['detail']}")
 
@@ -688,7 +734,7 @@ def main():
     print("\nSample (year: stocks/bonds/cash/gold | infl):")
     idx = {y: i for i, y in enumerate(years)}
     fmt = lambda v: "  null" if v is None else f"{v:+.4f}"
-    for y in (1871, 1921, 1929, 1932, 2008, 2022, 2025):
+    for y in (1871, 1921, 1929, 1932, 2008, 2022, years[-1]):
         i = idx[y]
         print(f"  {y}: {fmt(series['stocks'][i])}/{fmt(series['bonds'][i])}/"
               f"{fmt(series['cash'][i])}/{fmt(series['gold'][i])} | {fmt(inflation[i])}")

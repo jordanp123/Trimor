@@ -95,7 +95,7 @@ allocation:
 | Vector | Bound | Where |
 |---|---|---|
 | Income / adjustment rows | ≤ **50** each | `applyState` slices the arrays |
-| Retirement length (N) | ≤ dataset length (155) | `validate()` + clamp in `buildParams` |
+| Retirement length (N) | ≤ dataset length (155 years with data through 2025; one more each year) | `validate()` + clamp in `buildParams` |
 | Starting portfolio | finite, ≤ $10T | `validate()` (rejects `Infinity`) |
 | Monte Carlo trials | ≤ **200,000** | `clampTrials` **and** a hard cap inside `mc.run` |
 | Monte Carlo a share link may start on its own | ≤ **3,000,000** trial-years (trials × years) | `LINK_MC_BUDGET` in `run()` |

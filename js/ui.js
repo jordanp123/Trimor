@@ -1072,27 +1072,37 @@
   // the retirement length changes the spending RULE, not merely the period
   // being tested -- which is why success rates across lengths are only roughly
   // comparable, and why a longer plan can occasionally score slightly higher.
+  // `worst`: the largest rise in success rate measured from adding ONE year to
+  // a plan, over 10-60 year lengths and five allocations (points, rounded up).
+  // Re-measured after the final-year fix: it had been quoted as "under 2" for
+  // both, which was the VPW figure alone and is too low for Guyton-Klinger.
   const LENGTH_DEPENDENT = {
-    vpw: "VPW sets each year's withdrawal from the years you have left",
-    guyton: "Guyton-Klinger stops making its capital-preservation cut inside the final 15 years",
+    vpw: { why: "VPW sets each year's withdrawal from the years you have left", worst: 4 },
+    guyton: { why: "Guyton-Klinger stops making its capital-preservation cut inside the final 15 years", worst: 10 },
   };
 
   // Shown only when such a strategy is selected AND failures are actually
-  // reachable. A floorless VPW plan cannot run dry at all, so nothing can be
-  // reclassified and the caveat would be crying wolf (measured: 0.00pp there,
-  // against 1.83pp for VPW 5% with a $60k floor).
+  // reachable. A floorless VPW plan cannot run dry at all, so there is nothing
+  // for a longer plan to rescue and the caveat would be crying wolf.
+  //
+  // What it describes is mostly the RULE, not the data: a longer plan spends
+  // less each year, so start years that fail the shorter plan survive the
+  // longer one outright (measured: 861 such start-year flips for VPW with a
+  // floor and 2,643 for Guyton, against 182 and 71 that merely became
+  // "unknown" because the data ran out). The note says so, with the measured
+  // size: up to ~3 points where success is 90%+, more where plans fail often.
   function renderHorizonNote(s) {
     const note = $("horizonNote");
-    const why = s && s.mode === "historical" && s.failed > 0 && s.spending
+    const ld = s && s.mode === "historical" && s.failed > 0 && s.spending
       ? LENGTH_DEPENDENT[s.spending.strategy] : null;
-    note.hidden = !why;
-    if (!why) return;
-    note.textContent = why + ", so the retirement length is part of the spending rule " +
+    note.hidden = !ld;
+    if (!ld) return;
+    note.textContent = ld.why + ", so the retirement length is part of the spending rule " +
       "and not just the stretch of history being tested. Success rates at different " +
-      "lengths are therefore only roughly comparable: a longer plan draws less each " +
-      "year, so a start year that ran dry under a shorter plan can still be solvent " +
-      "when the data runs out — unknown rather than failed, and left out of the rate. " +
-      "Measured effect: under 2 percentage points. Compare plans at one length.";
+      "lengths are therefore only roughly comparable: a longer plan spends less each " +
+      "year, so it can survive start years that a shorter plan fails, and can even score " +
+      "higher. Measured: up to about 3 points where success is 90% or more, and up to about " +
+      ld.worst + " points on plans that fail often. Compare plans at one length.";
   }
 
   // ---------- year by year ----------
@@ -1567,6 +1577,11 @@
       m.textContent = "Enter a loan amount between $1 and $10 trillion."; m.className = "formmsg"; return;
     }
     if (!(months >= 1)) { m.textContent = "Enter a term of at least 1 month."; m.className = "formmsg"; return; }
+    // The schedule clamps these itself (100 years, 0-100% APR). Refuse instead,
+    // so the answer on screen is always for the loan that was typed.
+    if (months > SWR.amortize.MAX_MONTHS) { m.textContent = "Enter a term of 100 years or less."; m.className = "formmsg"; return; }
+    if (outOfRange("loanApr", 0, 100)) { m.textContent = "Interest rate must be between 0% and 100%."; m.className = "formmsg"; return; }
+    if (outOfRange("loanExtra", 0, MAX_PORTFOLIO)) { m.textContent = "Extra principal must be a dollar amount of 0 or more."; m.className = "formmsg"; return; }
     m.textContent = "";
     state.loan = SWR.amortize.schedule({ principal, apr: num("loanApr", 0), months, extra: num("loanExtra", 0) });
     renderLoan(state.loan);
@@ -1610,6 +1625,11 @@
     if (!(principal > 0 || annual > 0)) {
       m.textContent = "Enter a starting principal and/or an annual addition."; m.className = "formmsg"; return;
     }
+    // Same rule as the loan: the calculator clamps these, so refuse rather than
+    // show a result for a different rate, term or compounding than was typed.
+    if (outOfRange("compRate", 0, 100)) { m.textContent = "Rate must be between 0% and 100%."; m.className = "formmsg"; return; }
+    if (outOfRange("compYears", 1, SWR.compound.MAX_YEARS)) { m.textContent = "Years must be between 1 and " + SWR.compound.MAX_YEARS + "."; m.className = "formmsg"; return; }
+    if (outOfRange("compTimes", 1, SWR.compound.MAX_TIMES)) { m.textContent = "Compounding must be between 1 and " + SWR.compound.MAX_TIMES + " times a year."; m.className = "formmsg"; return; }
     m.textContent = "";
     state.compound = SWR.compound.grow({
       principal, annual,
@@ -2125,6 +2145,19 @@
     box.hidden = false;
   }
 
+  // ---------- facts that follow the data ----------
+  // The Help text quotes the data's span, the start years a 30-year plan is
+  // tested from, and how many such cycles there are. Those change every January
+  // when a new year of returns is published, so the page fills them in from the
+  // dataset it is actually running on rather than from numbers typed into the
+  // HTML (which stay as the fallback, and are checked against the data in tests).
+  function fillDataFacts() {
+    const y0 = DATA.years[0], y1 = DATA.years[DATA.years.length - 1];
+    $("factSpan").textContent = y0 + "–" + y1;
+    $("factStarts30").textContent = y0 + ", " + (y0 + 1) + ", … " + (y1 - 29);
+    $("factCycles30").textContent = String(y1 - 29 - y0 + 1);
+  }
+
   // ---------- deployment stamp ----------
   // Which build is this? The daily update regenerates the market data and
   // rebuilds the image in the same run, so the data's generation date is also
@@ -2271,7 +2304,7 @@
     $("mcSeed").value = String(100000 + Math.floor(Math.random() * 900000));
     const fromLink = loadHash();
     MONEY_IDS.forEach((id) => formatMoneyInput($(id))); // defaults + hash values get commas
-    stampBuild(); renderDataHealth();
+    stampBuild(); renderDataHealth(); fillDataFacts();
     state.adj = adjParts(); renderAdjNote();
     $("partnerFields").hidden = !$("partnerOn").checked;
     syncStrategy(); syncFreq(); syncSsCut(); updateAllocSum(); toggleFixed(); toggleMcOptions(); toggleMcBlock();

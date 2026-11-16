@@ -10,7 +10,7 @@ time and `git diff` js/cape-data.js to audit exactly what changed.
 Two products
 ------------
 1. capeAnnual[]  -- the STANDARD real Shiller CAPE at each year-end (Dec),
-   aligned to js/market-data.js's year axis (1871-2025; null before the first
+   aligned to js/market-data.js's year axis (1871 onward; null before the first
    full 10-year earnings window ~1881). This drives the HISTORICAL backtest --
    exactly what Big ERN's backtests use: each year's *actual* CAPE.
 
@@ -549,7 +549,7 @@ def main():
           f"Mar-2026 adjusted={round(mar26,1) if mar26 else 'n/a'} (ERN 32.37).")
     ny = [i for i in range(len(years)) if capeAnnual[i] is not None]
     print("Annual sample:", ", ".join(f"{years[i]}={capeAnnual[i]}"
-          for i in (ny[0], ny[len(ny)//2]) if True), f", 2025={capeAnnual[-1]}")
+          for i in (ny[0], ny[len(ny)//2]) if True), f", {years[-1]}={capeAnnual[-1]}")
     print(f"\nDone in {time.time() - t0:.1f}s.")
 
 
