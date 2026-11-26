@@ -90,10 +90,6 @@ h3 { font-size: 14px; }
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M6 22 L13 14 L18 19 L26 9' stroke='white' stroke-width='2.8' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 .topbar-actions { display: flex; align-items: center; gap: 10px; }
-.badge {
-  font-size: 12px; color: var(--ink-soft); background: var(--panel-2);
-  border: 1px solid var(--line); padding: 5px 10px; border-radius: 999px; white-space: nowrap;
-}
 .viewtabs { margin-right: 4px; }
 @media (max-width: 640px) {
   /* Stack the bar: brand row, then a full-width actions row. The actions use a
@@ -108,7 +104,6 @@ h3 { font-size: 14px; }
     display: grid; grid-template-columns: minmax(0, 1fr) auto auto;
     gap: 6px; align-items: center;
   }
-  .badge { display: none; }
   #viewTabs { margin-right: 0; }
   /* ID specificity to beat the later `.seg button` rule. */
   #viewTabs button { padding: 5px 8px; font-size: 11.5px; }
